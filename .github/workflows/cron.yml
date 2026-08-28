@@ -1,0 +1,25 @@
+name: sofia-crons
+on:
+  schedule:
+    - cron: "*/5 * * * *"    # retry tick — server enforces El Paso quiet hours, off-hours ticks are no-ops
+    - cron: "15 15 * * 1"    # weekly ROI report, Mon 9:15am MT (15:15 UTC during MDT)
+  workflow_dispatch:
+
+jobs:
+  retry-tick:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '*/5 * * * *'
+    steps:
+      - name: fire retry worker
+        run: |
+          curl -s -X POST "https://roberto-gavaldon3--ulises-realty-api-api.modal.run/cron/retry" \
+            -H "x-cron-token: ${{ secrets.CRON_TOKEN }}" -m 60
+
+  weekly-report:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '15 15 * * 1'
+    steps:
+      - name: fire weekly report
+        run: |
+          curl -s -X POST "https://roberto-gavaldon3--ulises-realty-api-api.modal.run/cron/weekly" \
+            -H "x-cron-token: ${{ secrets.CRON_TOKEN }}" -m 60
