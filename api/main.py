@@ -4,7 +4,10 @@ POST /lead            form submit -> instant Retell outbound call + SMS lead car
 POST /retell-webhook  call_ended (no-answer -> SMS lead + schedule redial) and
                       call_analyzed (SMS summary to owner, honor opt-out)
 GET|POST /telnyx-inbound  lead calls the 505 back -> Sofia answers (TeXML -> Retell SIP)
+POST /value           website tool: address -> value range + property tax estimate
 POST /tools/lookup-listings  Retell tool: Sofia searches Ulises's listings mid-call
+POST /tools/property-lookup  Retell tool: Sofia prices any address + its taxes
+POST /tools/compare-properties  Retell tool: Sofia compares two addresses
 POST /tools/book-showing     Retell tool: Sofia books a tentative slot on the calendar
 GET  /health
 
@@ -29,7 +32,7 @@ image = (
         "fastapi[standard]==0.115.*", "httpx", "retell-sdk",
         "google-api-python-client", "google-auth", "tzdata",
     )
-    .add_local_python_source("listings_data")
+    .add_local_python_source("listings_data", "property_data")
 )
 app = modal.App("ulises-realty-api")
 state = modal.Dict.from_name("ulises-realty-state", create_if_missing=True)
@@ -108,6 +111,8 @@ def _place_call(lead: dict) -> str:
                 "message": lead.get("message", "none"),
                 "call_language": "Spanish" if lang == "es" else "English",
                 "call_direction": "outbound_callback",
+                "property": lead.get("address") or "none given",
+                "valuation": lead.get("valuation_line") or "none run",
             },
             metadata={"source": "ulises-realty", "phone": lead["phone"]},
         )
@@ -198,12 +203,26 @@ def api():
 
         lang = "es" if str(body.get("language", "en")).lower().startswith("es") else "en"
         interest_key = str(body.get("interest", "other"))
+        address = str(body.get("address", "")).strip()[:160]
+
+        # If they ran the site's value tool, carry the numbers onto the call so
+        # Sofia opens already knowing them.
+        val = body.get("valuation") or {}
+        valuation_line = ""
+        if isinstance(val, dict) and val.get("ok"):
+            valuation_line = (
+                f"estimated ${val.get('value_low', 0):,}-${val.get('value_high', 0):,}, "
+                f"taxes about ${val.get('annual_tax', 0):,}/yr in {val.get('jurisdiction', 'El Paso')}"
+            )
+
         lead_rec = {
             "phone": phone, "name": name, "lang": lang,
             "interest": interest_key,
             "interest_desc": INTEREST.get(interest_key, INTEREST["other"])[lang],
             "message": str(body.get("message", "")).strip()[:300] or ("ninguno" if lang == "es" else "none"),
             "email": str(body.get("email", "")).strip()[:120],
+            "address": address,
+            "valuation_line": valuation_line,
             "ts": time.time(),
         }
 
@@ -224,12 +243,15 @@ def api():
         _bump_stat("leads")
         _bump_stat("calls_placed")
 
-        _sms_owner(
-            f"🏠 ULISES DEMO LEAD\n{name}\n{phone}\n"
-            f"Wants: {interest_key} · Lang: {lang.upper()}\n"
-            f"Note: {lead_rec['message'][:120]}\n"
-            f"Sofia call: {call_status[:80]}"
-        )
+        card = [f"🏠 ULISES DEMO LEAD", name, phone,
+                f"Wants: {interest_key} · Lang: {lang.upper()}"]
+        if address:
+            card.append(f"Property: {address}")
+        if valuation_line:
+            card.append(f"Ran value tool: {valuation_line}")
+        card.append(f"Note: {lead_rec['message'][:120]}")
+        card.append(f"Sofia call: {call_status[:80]}")
+        _sms_owner("\n".join(card))
         return JSONResponse({"ok": True, "call": call_status})
 
     # ── Retell webhook ───────────────────────────────────────────────────────
@@ -348,6 +370,8 @@ def api():
                     "message": (known or {}).get("message", "none"),
                     "call_language": "Spanish" if lang == "es" else "English",
                     "call_direction": "inbound",
+                    "property": (known or {}).get("address") or "none given",
+                    "valuation": (known or {}).get("valuation_line") or "none run",
                 },
                 agent_override={"retell_llm": {"begin_message": begin}},
             )
@@ -360,7 +384,66 @@ def api():
                      'Please try again in a moment.</Say><Hangup/></Response>')
         return Response(content=twiml, media_type="application/xml")
 
+    # ── website: home value + property tax lead magnet ───────────────────────
+    @web.post("/value")
+    async def value(req: Request):
+        from property_data import estimate
+        try:
+            body = await req.json()
+        except Exception:
+            body = {}
+        addr = str(body.get("address", "")).strip()[:160]
+        if not addr:
+            return JSONResponse({"ok": False, "error": "address required"}, status_code=400)
+        est = estimate(
+            address=addr,
+            sqft=body.get("sqft"),
+            beds=body.get("beds"),
+            condition=body.get("condition", "average"),
+            homestead=bool(body.get("homestead", True)),
+        )
+        _bump_stat("value_lookups")
+        return JSONResponse(est)
+
     # ── Retell custom tools ──────────────────────────────────────────────────
+    @web.post("/tools/property-lookup")
+    async def property_lookup(req: Request):
+        """Sofia prices any address on a call: value range + property taxes."""
+        from property_data import estimate, spoken
+        try:
+            body = await req.json()
+        except Exception:
+            body = {}
+        args = body.get("args", body) or {}
+        addr = str(args.get("address") or "").strip()
+        if not addr:
+            return {"result": "Ask the caller for the property address first."}
+        est = estimate(
+            address=addr, sqft=args.get("sqft"), beds=args.get("beds"),
+            condition=args.get("condition", "average"),
+            homestead=bool(args.get("homestead", True)),
+        )
+        _bump_stat("property_lookups")
+        return {"result": spoken(est, addr)}
+
+    @web.post("/tools/compare-properties")
+    async def compare_properties(req: Request):
+        """Sofia compares two addresses side by side — value and yearly taxes."""
+        from property_data import compare, estimate
+        try:
+            body = await req.json()
+        except Exception:
+            body = {}
+        args = body.get("args", body) or {}
+        a_addr = str(args.get("address_a") or "").strip()
+        b_addr = str(args.get("address_b") or "").strip()
+        if not (a_addr and b_addr):
+            return {"result": "Ask the caller for both addresses before comparing."}
+        a = estimate(address=a_addr, sqft=args.get("sqft_a"), beds=args.get("beds_a"))
+        b = estimate(address=b_addr, sqft=args.get("sqft_b"), beds=args.get("beds_b"))
+        _bump_stat("property_lookups", 2)
+        return {"result": compare(a, b, a_addr, b_addr)}
+
     @web.post("/tools/lookup-listings")
     async def lookup_listings(req: Request):
         from listings_data import search
@@ -369,17 +452,21 @@ def api():
         except Exception:
             body = {}
         args = body.get("args", body) or {}
+        hot_only = str(args.get("hot_only", "")).lower() in ("true", "yes", "1")
         res = search(
             area=args.get("area"), max_price=args.get("max_price"),
             min_beds=args.get("min_beds"), address=args.get("address"),
+            hot_only=hot_only,
         )[:3]
         if not res:
             return {"result": "No exact matches in Ulises's current featured listings. Tell the caller Ulises has full MLS access and will pull matching homes for them personally."}
-        out = [
-            f"{l['address']} ({l['area']}): ${l['price']:,}, {l['beds']} bed / {l['baths']} bath, "
-            f"{l['sqft']:,} sqft, status {l['status']}. {l['highlights']}"
-            for l in res
-        ]
+        out = []
+        for l in res:
+            line = (f"{l['address']} ({l['area']}): ${l['price']:,}, {l['beds']} bed / "
+                    f"{l['baths']} bath, {l['sqft']:,} sqft, status {l['status']}. {l['highlights']}")
+            if l.get("hot"):
+                line += f" HOT: {l['hot']}."
+            out.append(line)
         return {"result": " | ".join(out)}
 
     @web.post("/tools/book-showing")
@@ -469,5 +556,7 @@ def weekly_report():
         f"Calls placed: {s.get('calls_placed', 0)}\n"
         f"Connected: {s.get('connected', 0)}\n"
         f"Inbound answered: {s.get('inbound', 0)}\n"
+        f"Home-value lookups: {s.get('value_lookups', 0)}\n"
+        f"Property/tax questions on calls: {s.get('property_lookups', 0)}\n"
         f"Appointments booked: {s.get('booked', 0)}"
     )

@@ -14,11 +14,13 @@ LISTINGS = [
     {
         "address": "1523 Cimarron Ridge Dr", "area": "West Side (Cimarron)", "city": "El Paso",
         "price": 385000, "beds": 4, "baths": 2.5, "sqft": 2400, "status": "Active",
+        "hot": "Open house Saturday — listed 3 days ago, already 2 showings booked",
         "highlights": "Cimarron community, mountain views, open house this Saturday 12-3pm.",
     },
     {
         "address": "3308 Tierra Nocturna Ave", "area": "East Side", "city": "El Paso",
         "price": 265000, "beds": 3, "baths": 2, "sqft": 1780, "status": "Active",
+        "hot": "Price dropped $14,000 this week — seller is motivated",
         "highlights": "Great starter home, refrigerated air, close to Loop 375 and schools.",
     },
     {
@@ -29,6 +31,7 @@ LISTINGS = [
     {
         "address": "14208 Desert Sage Ct", "area": "Horizon City", "city": "Horizon City",
         "price": 232000, "beds": 3, "baths": 2, "sqft": 1650, "status": "Active",
+        "hot": "Just listed — under $240k in Horizon, these move fast",
         "highlights": "Under $240k, built 2021, low-maintenance yard, cul-de-sac.",
     },
     {
@@ -39,10 +42,15 @@ LISTINGS = [
 ]
 
 
-def search(area=None, max_price=None, min_beds=None, address=None):
-    """Filter listings; loose case-insensitive matching. Returns list of dicts."""
+def search(area=None, max_price=None, min_beds=None, address=None, hot_only=False):
+    """Filter listings; loose case-insensitive matching. Returns list of dicts.
+
+    hot_only mirrors the site's "Hot Homes" strip — the agent's hot sheet.
+    """
     out = []
     for l in LISTINGS:
+        if hot_only and not l.get("hot"):
+            continue
         if address and address.strip():
             a = address.lower()
             if not any(tok in l["address"].lower() for tok in a.split() if len(tok) > 2):

@@ -1,12 +1,58 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// SAMPLE LISTINGS MODULE — swap point for the live IDX feed.
+// SAMPLE LISTINGS MODULE — swap point for the live IDX / Flexmls feed.
 //
-// When the client's IDX account exists (IDX Broker / iHomefinder), delete this
-// file and drop the vendor's embed widget inside <div id="listings-module">
-// in index.html. Nothing else on the page changes.
+// TWO independent modules live in this file:
 //
+//   window.HOT_LISTINGS      → the "Hot Homes" strip on the front page.
+//                              Fed later by the agent's Flexmls hot sheet /
+//                              saved search (the "specific list" he keeps).
+//                              Swap point in index.html: <div id="hot-module">
+//
+//   window.SAMPLE_LISTINGS   → the "Featured Homes" grid.
+//                              Swap point in index.html: <div id="listings-module">
+//
+// When the real feed exists, delete the array you're replacing and drop the
+// vendor widget into that div — or keep these renderers and just repoint the
+// data at the API. Nothing else on the page changes.
+//
+// Keep in sync with api/listings_data.py, which is what Sofia reads on calls.
 // All listings below are FICTIONAL samples for demo purposes.
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Hot sheet: new / price-improved / about-to-go. `hot` drives the flame ribbon.
+window.HOT_LISTINGS = [
+  {
+    price: 385000,
+    address: "1523 Cimarron Ridge Dr",
+    area: "West Side · Cimarron",
+    beds: 4, baths: 2.5, sqft: 2400,
+    hot: { en: "Open House Sat", es: "Casa Abierta Sáb" },
+    note: { en: "Listed 3 days ago · already 2 showings booked",
+            es: "Publicada hace 3 días · ya con 2 citas" },
+    img: "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&q=70&auto=format&fit=crop"
+  },
+  {
+    price: 265000,
+    address: "3308 Tierra Nocturna Ave",
+    area: "East Side",
+    beds: 3, baths: 2, sqft: 1780,
+    hot: { en: "Price Drop −$14k", es: "Bajó $14k" },
+    note: { en: "Seller motivated · reduced this week",
+            es: "Vendedor motivado · rebaja esta semana" },
+    img: "https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=800&q=70&auto=format&fit=crop"
+  },
+  {
+    price: 232000,
+    address: "14208 Desert Sage Ct",
+    area: "Horizon City",
+    beds: 3, baths: 2, sqft: 1650,
+    hot: { en: "Just Listed", es: "Recién Publicada" },
+    note: { en: "Under $240k in Horizon — these move fast",
+            es: "Menos de $240k en Horizon — se van rápido" },
+    img: "https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=800&q=70&auto=format&fit=crop"
+  }
+];
+
 window.SAMPLE_LISTINGS = [
   {
     price: 489000,

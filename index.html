@@ -89,6 +89,11 @@
     form{padding:22px 18px}
     .about-photo img{height:340px}
     h2{font-size:1.55rem}
+    .hot{padding:40px 0 44px}
+    .hphoto{height:170px}
+    .vcard{padding:22px 18px}
+    .vbig{font-size:1.55rem}
+    .vbox .n{font-size:1.3rem}
   }
 
   /* HERO */
@@ -136,6 +141,65 @@
   .lspecs{display:flex;gap:16px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);font-size:.83rem;color:var(--muted)}
   .lspecs b{color:var(--ink)}
   .idx-note{margin-top:26px;font-size:.8rem;color:var(--muted);text-align:center}
+
+  /* HOT HOMES */
+  .hot{background:#fff;padding:56px 0 60px;border-bottom:1px solid var(--line)}
+  .hot-head{display:flex;justify-content:space-between;align-items:end;gap:20px;flex-wrap:wrap;margin-bottom:28px}
+  .flame{display:inline-flex;align-items:center;gap:8px;background:#fff3e0;border:1px solid #f0d9a8;color:#a35c00;
+         font-size:.7rem;font-weight:800;letter-spacing:.16em;text-transform:uppercase;padding:6px 14px;border-radius:999px}
+  .hgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+  @media(max-width:900px){.hgrid{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:600px){.hgrid{grid-template-columns:1fr}}
+  .hcard{position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:var(--card);
+         box-shadow:0 6px 18px rgba(20,30,45,.06);transition:.18s;display:flex;flex-direction:column}
+  .hcard:hover{transform:translateY(-4px);box-shadow:0 16px 34px rgba(20,30,45,.14)}
+  .hphoto{position:relative;height:180px;overflow:hidden;background:linear-gradient(140deg,#dfe6ee,#c6d2e0)}
+  .hphoto img{width:100%;height:100%;object-fit:cover}
+  .hribbon{position:absolute;top:12px;left:12px;background:linear-gradient(90deg,#c0392b,#e07b39);color:#fff;
+           font-size:.68rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;padding:5px 12px;border-radius:999px;
+           box-shadow:0 4px 12px rgba(192,57,43,.35)}
+  .hbody{padding:16px 18px 18px;display:flex;flex-direction:column;gap:4px;flex:1}
+  .hnote{font-size:.79rem;color:#a35c00;font-weight:600;margin-top:6px}
+  .hspecs{display:flex;gap:14px;margin-top:auto;padding-top:12px;border-top:1px solid var(--line);font-size:.82rem;color:var(--muted)}
+  .hspecs b{color:var(--ink)}
+
+  /* VALUE / TAX TOOL */
+  .value{background:linear-gradient(165deg,#12243a,#0e1b2c 60%,#16283f);color:#fff}
+  .value .sub{color:#b6c2d2}
+  .vgrid{display:grid;grid-template-columns:.95fr 1.05fr;gap:48px;align-items:start}
+  @media(max-width:900px){.vgrid{grid-template-columns:1fr;gap:34px}}
+  .vpoints{margin-top:24px;display:flex;flex-direction:column;gap:15px;font-size:.94rem}
+  .vpoints div{display:flex;gap:12px;align-items:start}
+  .vpoints .ic{color:var(--gold-soft);flex-shrink:0}
+  .vcard{background:#fff;color:var(--ink);border-radius:16px;padding:28px 26px;box-shadow:0 24px 54px rgba(0,0,0,.35)}
+  .vcard h3{font-family:'Playfair Display',serif;font-size:1.3rem;color:var(--navy);margin-bottom:4px}
+  .vcard .vhint{font-size:.82rem;color:var(--muted)}
+  .vbtn{width:100%;margin-top:18px;background:var(--gold);color:var(--navy);border:none;padding:14px;border-radius:999px;
+        font-weight:800;font-size:1rem;cursor:pointer;transition:.15s}
+  .vbtn:hover{background:var(--navy);color:#fff}
+  .vbtn:disabled{opacity:.6;cursor:wait}
+  .vout{display:none;margin-top:22px;border-top:1px solid var(--line);padding-top:20px}
+  .vbig{font-family:'Playfair Display',serif;font-size:1.9rem;font-weight:700;color:var(--navy);line-height:1.15}
+  .vlabel{font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);font-weight:800}
+  .vsplit{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:18px}
+  @media(max-width:420px){.vsplit{grid-template-columns:1fr}}
+  .vbox{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:16px 16px}
+  .vbox .n{font-family:'Playfair Display',serif;font-size:1.5rem;font-weight:700;color:var(--navy)}
+  .vbox .l{font-size:.75rem;color:var(--muted);margin-top:2px}
+  .vrows{margin-top:16px;font-size:.85rem}
+  .vrow{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px dashed var(--line)}
+  .vrow span:last-child{font-weight:700}
+  .vsave{margin-top:16px;background:#eaf6ef;border:1px solid #bfe2cd;color:#12603d;border-radius:12px;padding:14px 16px;font-size:.86rem}
+  .vsave b{display:block;font-size:.95rem;margin-bottom:2px}
+  .vdisc{margin-top:14px;font-size:.72rem;color:var(--muted);line-height:1.5}
+  .vnext{margin-top:18px;background:var(--navy);color:#fff;border-radius:12px;padding:18px 18px}
+  .vnext h4{font-family:'Playfair Display',serif;font-size:1.05rem;margin-bottom:4px}
+  .vnext p{font-size:.83rem;color:#b6c2d2}
+  .vnext .frow{margin-top:12px}
+  .vnext label{color:#dfe6ee}
+  .vnext .consent{color:#a9b7c7}
+  .vnext .submit{background:var(--gold);color:var(--navy)}
+  .vnext .submit:hover{background:#fff}
 
   /* SERVICES */
   .services{background:#fff}
@@ -221,8 +285,9 @@
   <div class="wrap nav-in">
     <a href="#" class="brand">ULISES ORTEGA<span class="brand-sub"> <b>·</b> <span data-i18n="nav_brand">REAL ESTATE</span></span></a>
     <div class="nav-links">
+      <a href="#hot" class="hideable" data-i18n="nav_hot">Hot Homes</a>
       <a href="#listings" class="hideable" data-i18n="nav_listings">Listings</a>
-      <a href="#services" class="hideable" data-i18n="nav_services">Services</a>
+      <a href="#value" data-i18n="nav_value">Home Value</a>
       <a href="#about" class="hideable" data-i18n="nav_about">About</a>
       <button class="lang-btn" id="langBtn" onclick="toggleLang()">ES</button>
       <a href="#contact" class="cta-mini" data-i18n="nav_cta">Let's Talk</a>
@@ -238,7 +303,7 @@
       <p data-i18n="hero_p">Buying your first home or selling your current one — I handle the search, the negotiation, and the paperwork, in English o en español. You'll never wait on a callback again.</p>
       <div class="hero-ctas">
         <a href="#listings" class="btn btn-gold" data-i18n="hero_cta1">View Listings</a>
-        <a href="#contact" class="btn btn-ghost" data-i18n="hero_cta2">What's My Home Worth?</a>
+        <a href="#value" class="btn btn-ghost" data-i18n="hero_cta2">What's My Home Worth?</a>
       </div>
       <div class="stat-bar">
         <div class="stat"><b>60<span style="font-size:1rem">s</span></b><span data-i18n="stat1">avg. response to inquiries</span></div>
@@ -263,6 +328,21 @@
   </div>
 </div>
 
+<section class="hot" id="hot">
+  <div class="wrap">
+    <div class="hot-head">
+      <div>
+        <span class="flame">🔥 <span data-i18n="h_flame">Moving Fast</span></span>
+        <h2 data-i18n="h_h2">Hot Homes This Week</h2>
+        <p class="sub" data-i18n="h_sub">Just listed, just reduced, or about to go under contract. This list changes constantly — ask me about any of them and my assistant calls you right back.</p>
+      </div>
+      <a href="#contact" class="btn btn-gold" style="align-self:center" data-i18n="h_cta">Ask About These</a>
+    </div>
+    <div id="hot-module" class="hgrid"><!-- Flexmls hot sheet feed replaces this module when live --></div>
+    <p class="idx-note" data-i18n="h_note">Sample hot list shown for demo. Connects to the agent's live Flexmls hot sheet.</p>
+  </div>
+</section>
+
 <section id="listings">
   <div class="wrap">
     <div class="listings-head">
@@ -275,6 +355,95 @@
     </div>
     <div id="listings-module" class="grid3"><!-- IDX widget replaces this module when live --></div>
     <p class="idx-note" data-i18n="l_note">Sample listings shown for demo purposes. Live MLS search (IDX) connects here.</p>
+  </div>
+</section>
+
+<section class="value" id="value">
+  <div class="wrap vgrid">
+    <div>
+      <div class="eyebrow" data-i18n="v_eyebrow">Free · 30 Seconds · No Obligation</div>
+      <h2 style="color:#fff" data-i18n="v_h2">What's Your Home Worth — And What Are You Paying In Taxes?</h2>
+      <p class="sub" data-i18n="v_sub">Most El Paso homeowners have no idea what their house is actually worth today, and even fewer know what they're really paying the county every year. Put in your address and find out both in one shot.</p>
+      <div class="vpoints">
+        <div><span class="ic">📈</span><span data-i18n="v_p1">Current market value range for your home</span></div>
+        <div><span class="ic">🧾</span><span data-i18n="v_p2">Estimated annual property tax, broken down by who gets what</span></div>
+        <div><span class="ic">🛡️</span><span data-i18n="v_p3">Whether your homestead exemption is saving you what it should — a lot of people are overpaying and don't know it</span></div>
+        <div><span class="ic">📞</span><span data-i18n="v_p4">Want the exact county numbers? Leave your number and I'll have them pulled for you.</span></div>
+      </div>
+    </div>
+
+    <div class="vcard">
+      <h3 data-i18n="v_form_h">Check My Home</h3>
+      <p class="vhint" data-i18n="v_form_hint">Address is all I need. The rest just tightens the estimate.</p>
+      <form id="valueForm" onsubmit="return runValue(event)">
+        <label data-i18n="v_addr">PROPERTY ADDRESS *</label>
+        <input name="address" required data-i18n-ph="v_addr_ph" placeholder="1523 Cimarron Ridge Dr, El Paso, TX 79912">
+        <div class="frow">
+          <div><label data-i18n="v_sqft">SQUARE FEET</label><input name="sqft" type="number" min="300" max="20000" data-i18n-ph="v_sqft_ph" placeholder="don't know? leave blank"></div>
+          <div><label data-i18n="v_beds">BEDROOMS</label>
+            <select name="beds">
+              <option value="" data-i18n="v_pick">—</option>
+              <option value="2">2</option><option value="3">3</option>
+              <option value="4">4</option><option value="5">5+</option>
+            </select>
+          </div>
+        </div>
+        <div class="frow">
+          <div><label data-i18n="v_cond">CONDITION</label>
+            <select name="condition">
+              <option value="needs work" data-i18n="v_c1">Needs work</option>
+              <option value="fair" data-i18n="v_c2">Fair</option>
+              <option value="average" selected data-i18n="v_c3">Average</option>
+              <option value="good" data-i18n="v_c4">Good</option>
+              <option value="updated" data-i18n="v_c5">Updated / remodeled</option>
+            </select>
+          </div>
+          <div><label data-i18n="v_hs">HOMESTEAD EXEMPTION?</label>
+            <select name="homestead">
+              <option value="yes" selected data-i18n="v_hs_y">Yes, it's filed</option>
+              <option value="no" data-i18n="v_hs_n">No / not sure</option>
+            </select>
+          </div>
+        </div>
+        <button class="vbtn" id="valueBtn" data-i18n="v_submit">Show My Numbers →</button>
+      </form>
+
+      <div class="vout" id="valueOut">
+        <div class="vlabel" data-i18n="v_out_label">Estimated market value</div>
+        <div class="vbig" id="vRange">—</div>
+        <div class="vhint" id="vBasis"></div>
+
+        <div class="vsplit">
+          <div class="vbox"><div class="n" id="vTaxYear">—</div><div class="l" data-i18n="v_tax_year">estimated property tax / year</div></div>
+          <div class="vbox"><div class="n" id="vTaxMonth">—</div><div class="l" data-i18n="v_tax_mo">per month, built into your payment</div></div>
+        </div>
+
+        <div class="vrows" id="vRows"></div>
+        <div class="vsave" id="vSave" style="display:none"></div>
+        <p class="vdisc" data-i18n="v_disc">Estimate only — modeled from El Paso County area values and current tax rates. Not an official appraisal, tax statement, or offer. Ulises will pull your exact county figures and a full comparative market analysis on request.</p>
+
+        <div class="vnext">
+          <h4 data-i18n="v_next_h">Want the exact numbers?</h4>
+          <p data-i18n="v_next_p">Leave your name and number — Sofia calls you in about a minute with this pulled up, and Ulises follows up with the real county figures and a full market analysis.</p>
+          <form id="valueLeadForm" onsubmit="return submitValueLead(event)">
+            <div class="frow">
+              <div><label data-i18n="fl_name">FULL NAME *</label><input name="name" required placeholder="Maria Gonzalez"></div>
+              <div><label data-i18n="fl_phone">PHONE *</label><input name="phone" type="tel" required placeholder="(915) 555-0123"></div>
+            </div>
+            <div class="consent">
+              <input type="checkbox" name="consent" required>
+              <span data-i18n="fl_consent">I agree to receive a call and/or text from Ulises and his assistant about my inquiry. Msg &amp; data rates may apply. This is not a condition of any purchase.</span>
+            </div>
+            <button class="submit" id="valueLeadBtn" data-i18n="v_next_cta">Call Me With My Numbers →</button>
+          </form>
+          <div class="success" id="valueLeadOk" style="padding:22px 6px">
+            <div class="big">📞</div>
+            <h3 data-i18n="ok_h">Your phone is about to ring!</h3>
+            <p style="color:#b6c2d2" data-i18n="v_ok_p">Sofia is calling from a (505) number with your address already pulled up.</p>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -396,6 +565,8 @@
               </select>
             </div>
           </div>
+          <label data-i18n="fl_addr">PROPERTY ADDRESS <span style="font-weight:500;color:var(--muted)">(optional — yours, or one you're asking about)</span></label>
+          <input name="address" data-i18n-ph="fl_addr_ph" placeholder="1523 Cimarron Ridge Dr, El Paso, TX 79912">
           <label data-i18n="fl_msg">TELL ME MORE</label>
           <textarea name="message" rows="3" data-i18n-ph="fl_msg_ph" placeholder="e.g. Looking for 4 bed on the West Side under $400k…"></textarea>
           <div class="consent">
@@ -451,12 +622,47 @@
 <script>
 // ── CONFIG ───────────────────────────────────────────────────────────────────
 // Set after the Modal endpoint is deployed. Empty = demo mode (no call fired).
-const LEAD_ENDPOINT = "https://roberto-gavaldon3--ulises-realty-api-api.modal.run/lead";
+const API_BASE = "https://roberto-gavaldon3--ulises-realty-api-api.modal.run";
+const LEAD_ENDPOINT  = API_BASE + "/lead";
+const VALUE_ENDPOINT = API_BASE + "/value";
 
 // ── i18n ─────────────────────────────────────────────────────────────────────
 const I18N = {
   es: {
     nav_brand:"BIENES RAÍCES", nav_listings:"Casas", nav_services:"Servicios", nav_about:"Sobre Mí", nav_cta:"Hablemos",
+    nav_hot:"Lo Más Caliente", nav_value:"Valor de Mi Casa",
+    h_flame:"Se Van Rápido", h_h2:"Casas Calientes Esta Semana",
+    h_sub:"Recién publicadas, recién rebajadas, o a punto de venderse. Esta lista cambia constantemente — pregúntame por cualquiera y mi asistente te llama de inmediato.",
+    h_cta:"Preguntar Por Estas",
+    h_note:"Lista de muestra para demostración. Se conecta al hot sheet en vivo de Flexmls del agente.",
+    v_eyebrow:"Gratis · 30 Segundos · Sin Compromiso",
+    v_h2:"¿Cuánto Vale Tu Casa — Y Cuánto Estás Pagando de Impuestos?",
+    v_sub:"La mayoría de los dueños en El Paso no sabe cuánto vale su casa hoy, y menos aún saben cuánto le pagan al condado cada año. Pon tu dirección y descubre las dos cosas de una vez.",
+    v_p1:"Rango de valor de mercado actual de tu casa",
+    v_p2:"Impuesto predial anual estimado, desglosado por quién se lleva qué",
+    v_p3:"Si tu exención de homestead te está ahorrando lo que debería — mucha gente paga de más sin saberlo",
+    v_p4:"¿Quieres los números exactos del condado? Déjame tu número y te los consigo.",
+    v_form_h:"Revisar Mi Casa", v_form_hint:"Solo necesito la dirección. Lo demás afina el estimado.",
+    v_addr:"DIRECCIÓN DE LA PROPIEDAD *", v_addr_ph:"1523 Cimarron Ridge Dr, El Paso, TX 79912",
+    v_sqft:"PIES CUADRADOS", v_sqft_ph:"¿no sabes? déjalo en blanco", v_beds:"RECÁMARAS", v_pick:"—",
+    v_cond:"CONDICIÓN", v_c1:"Necesita trabajo", v_c2:"Regular", v_c3:"Promedio", v_c4:"Buena", v_c5:"Remodelada",
+    v_hs:"¿EXENCIÓN HOMESTEAD?", v_hs_y:"Sí, ya está registrada", v_hs_n:"No / no estoy seguro",
+    v_submit:"Ver Mis Números →", v_out_label:"Valor de mercado estimado",
+    v_tax_year:"impuesto predial estimado / año", v_tax_mo:"por mes, dentro de tu pago",
+    v_disc:"Solo un estimado — modelado con valores de zona del Condado de El Paso y las tasas actuales. No es un avalúo oficial, ni un estado de impuestos, ni una oferta. Ulises puede sacar tus cifras exactas del condado y un análisis comparativo completo.",
+    v_next_h:"¿Quieres los números exactos?",
+    v_next_p:"Déjame tu nombre y teléfono — Sofía te llama en un minuto con esto en pantalla, y Ulises te da seguimiento con las cifras reales del condado y un análisis de mercado completo.",
+    v_next_cta:"Llámame Con Mis Números →",
+    v_ok_p:"Sofía te está llamando de un número (505) con tu dirección ya en pantalla.",
+    v_err:"No pude calcular esa dirección. Revísala o mándame tu número y lo hago manualmente.",
+    v_basis_zip:"Basado en tu zona", v_basis_sqft:"pies cuadrados", v_basis_est:"tamaño típico de la zona (estimado)",
+    v_school:"Distrito escolar", v_other:"Ciudad, condado, hospital y colegio",
+    v_save_h:"Tu exención de homestead te ahorra aprox.",
+    v_save_p:"Si NO está registrada, estás pagando de más esa cantidad cada año. Se arregla con un formulario — pregúntame.",
+    v_nohs_h:"Podrías estar pagando de más aprox.",
+    v_nohs_p:"cada año sin la exención de homestead. Es gratis registrarla y es dinero de vuelta en tu bolsa.",
+    fl_addr:'DIRECCIÓN DE LA PROPIEDAD <span style="font-weight:500;color:var(--muted)">(opcional — la tuya, o una que te interesa)</span>',
+    fl_addr_ph:"1523 Cimarron Ridge Dr, El Paso, TX 79912",
     hero_eyebrow:"REALTOR® · El Paso, TX · Bilingüe EN/ES",
     hero_h1:'Tu próxima casa en El Paso empieza con <em>una conversación</em>.',
     hero_p:"Comprar tu primera casa o vender la actual — yo me encargo de la búsqueda, la negociación y el papeleo, en español or in English. Nunca más esperarás una llamada de vuelta.",
@@ -525,6 +731,7 @@ function applyLang(){
   document.getElementById("langBtn").textContent = LANG==="en" ? "ES" : "EN";
   document.documentElement.lang = LANG;
   renderListings();
+  renderHot();
 }
 function toggleLang(){ LANG = LANG==="en" ? "es" : "en"; applyLang(); }
 
@@ -553,6 +760,121 @@ function renderListings(){
     </div>`).join("");
 }
 
+// ── Hot homes render (swap point for the Flexmls hot sheet feed) ────────────
+function renderHot(){
+  const root = document.getElementById("hot-module");
+  if(!root || !window.HOT_LISTINGS) return;
+  const fmt = n => "$" + n.toLocaleString("en-US");
+  const t = (en,es) => LANG==="es" ? es : en;
+  root.innerHTML = window.HOT_LISTINGS.map(l => `
+    <div class="hcard">
+      <div class="hphoto">
+        <span class="hribbon">🔥 ${LANG==="es" ? l.hot.es : l.hot.en}</span>
+        <img src="${l.img}" alt="${l.address}" loading="lazy" onerror="this.remove()">
+      </div>
+      <div class="hbody">
+        <div class="lprice">${fmt(l.price)}</div>
+        <div class="laddr">${l.address}</div>
+        <div class="larea">${l.area}</div>
+        <div class="hnote">${LANG==="es" ? l.note.es : l.note.en}</div>
+        <div class="hspecs">
+          <span><b>${l.beds}</b> ${t("bd","rec")}</span>
+          <span><b>${l.baths}</b> ${t("ba","baños")}</span>
+          <span><b>${l.sqft.toLocaleString()}</b> sqft</span>
+        </div>
+      </div>
+    </div>`).join("");
+}
+
+// ── Home value + property tax tool ──────────────────────────────────────────
+let LAST_VALUE = null;      // last estimate, forwarded with the lead so Sofia has it
+let LAST_ADDRESS = "";
+const S = k => (LANG==="es" && I18N.es[k]) ? I18N.es[k] : null;
+
+async function runValue(e){
+  e.preventDefault();
+  const f = e.target;
+  const btn = document.getElementById("valueBtn");
+  btn.disabled = true;
+  LAST_ADDRESS = f.address.value.trim();
+  try{
+    const r = await fetch(VALUE_ENDPOINT, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        address: LAST_ADDRESS,
+        sqft: f.sqft.value || null,
+        beds: f.beds.value || null,
+        condition: f.condition.value,
+        homestead: f.homestead.value === "yes"
+      })
+    });
+    const d = await r.json();
+    if(!d.ok) throw new Error("no estimate");
+    LAST_VALUE = d;
+    paintValue(d, f.homestead.value === "yes");
+  }catch(err){
+    alert(S("v_err") || "I couldn't price that address. Double-check it, or leave me your number and I'll do it by hand.");
+  }
+  btn.disabled = false;
+  return false;
+}
+
+function paintValue(d, hs){
+  const money = n => "$" + Number(n).toLocaleString("en-US");
+  document.getElementById("vRange").textContent = money(d.value_low) + " – " + money(d.value_high);
+  document.getElementById("vBasis").textContent =
+    `${S("v_basis_zip") || "Based on your area"}: ${d.area} · ${d.sqft_used.toLocaleString()} ` +
+    (d.sqft_known ? (S("v_basis_sqft") || "sq ft")
+                  : (S("v_basis_est") || "sq ft (area-typical estimate)"));
+  document.getElementById("vTaxYear").textContent  = money(d.annual_tax);
+  document.getElementById("vTaxMonth").textContent = money(d.monthly_tax);
+
+  const names = {"School district": S("v_school") || "School district",
+                 "City, county, hospital & college": S("v_other") || "City, county, hospital & college"};
+  document.getElementById("vRows").innerHTML =
+    d.tax_breakdown.map(b =>
+      `<div class="vrow"><span>${names[b.name] || b.name} · ${b.rate}%</span><span>${money(b.amount)}</span></div>`
+    ).join("") +
+    `<div class="vrow"><span>${d.jurisdiction} · ${d.combined_rate_pct}%</span><span>${money(d.annual_tax)}</span></div>`;
+
+  const save = document.getElementById("vSave");
+  if(d.homestead_savings > 0){
+    save.style.display = "block";
+    save.innerHTML = hs
+      ? `<b>${(S("v_save_h") || "Your homestead exemption saves you about")} ${money(d.homestead_savings)}/yr</b>
+         ${S("v_save_p") || "If it's NOT actually filed, you're overpaying by that much every year. It's one form — ask me."}`
+      : `<b>${(S("v_nohs_h") || "You may be overpaying about")} ${money(d.homestead_savings)}/yr</b>
+         ${S("v_nohs_p") || "without a homestead exemption. Filing it is free and it's money back in your pocket."}`;
+  } else { save.style.display = "none"; }
+
+  document.getElementById("valueOut").style.display = "block";
+  document.getElementById("valueOut").scrollIntoView({behavior:"smooth", block:"nearest"});
+}
+
+async function submitValueLead(e){
+  e.preventDefault();
+  const f = e.target;
+  const btn = document.getElementById("valueLeadBtn");
+  btn.disabled = true;
+  const payload = {
+    name: f.name.value.trim(),
+    phone: f.phone.value.trim(),
+    interest: "value",
+    language: LANG,
+    address: LAST_ADDRESS,
+    valuation: LAST_VALUE,
+    message: LAST_ADDRESS ? `Ran the home value tool for ${LAST_ADDRESS}` : "Ran the home value tool",
+    consent: f.consent.checked,
+    source: "ulises-realty-value-tool"
+  };
+  try{
+    await fetch(LEAD_ENDPOINT, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload)});
+  }catch(err){ /* server-side alert has its own fallback */ }
+  f.style.display = "none";
+  document.getElementById("valueLeadOk").style.display = "block";
+  return false;
+}
+
 // ── Lead submit ──────────────────────────────────────────────────────────────
 async function submitLead(e){
   e.preventDefault();
@@ -565,6 +887,7 @@ async function submitLead(e){
     email: f.email.value.trim(),
     interest: f.interest.value,
     language: f.language.value,
+    address: f.address.value.trim(),
     message: f.message.value.trim(),
     consent: f.consent.checked,
     source: "ulises-realty-demo"
