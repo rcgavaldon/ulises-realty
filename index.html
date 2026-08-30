@@ -656,7 +656,7 @@ const I18N = {
     v_next_cta:"Llámame Con Mis Números →",
     v_ok_p:"Sofía te está llamando de un número (505) con tu dirección ya en pantalla.",
     v_err:"No pude calcular esa dirección. Revísala o mándame tu número y lo hago manualmente.",
-    v_basis_zip:"Basado en tu zona", v_basis_sqft:"pies cuadrados", v_basis_est:"tamaño típico de la zona (estimado)",
+    v_basis_zip:"Basado en tu zona", v_basis_sqft:"pies²", v_basis_est:"pies² (tamaño típico de la zona)", v_yr:"al año",
     v_school:"Distrito escolar", v_other:"Ciudad, condado, hospital y colegio",
     v_save_h:"Tu exención de homestead te ahorra aprox.",
     v_save_p:"Si NO está registrada, estás pagando de más esa cantidad cada año. Se arregla con un formulario — pregúntame.",
@@ -839,12 +839,13 @@ function paintValue(d, hs){
     `<div class="vrow"><span>${d.jurisdiction} · ${d.combined_rate_pct}%</span><span>${money(d.annual_tax)}</span></div>`;
 
   const save = document.getElementById("vSave");
+  const yr = S("v_yr") || "/yr";
   if(d.homestead_savings > 0){
     save.style.display = "block";
     save.innerHTML = hs
-      ? `<b>${(S("v_save_h") || "Your homestead exemption saves you about")} ${money(d.homestead_savings)}/yr</b>
+      ? `<b>${(S("v_save_h") || "Your homestead exemption saves you about")} ${money(d.homestead_savings)} ${yr}</b>
          ${S("v_save_p") || "If it's NOT actually filed, you're overpaying by that much every year. It's one form — ask me."}`
-      : `<b>${(S("v_nohs_h") || "You may be overpaying about")} ${money(d.homestead_savings)}/yr</b>
+      : `<b>${(S("v_nohs_h") || "You may be overpaying about")} ${money(d.homestead_savings)} ${yr}</b>
          ${S("v_nohs_p") || "without a homestead exemption. Filing it is free and it's money back in your pocket."}`;
   } else { save.style.display = "none"; }
 
