@@ -132,6 +132,7 @@ def _bump_stat(key: str, n: int = 1):
 
 INTEREST = {
     "buy":   {"en": "buying a home",         "es": "comprar casa"},
+    "rent":  {"en": "renting a home",        "es": "rentar una casa"},
     "sell":  {"en": "selling their home",    "es": "vender su casa"},
     "value": {"en": "a free home valuation", "es": "un avaluo gratis de su casa"},
     "other": {"en": "El Paso real estate",   "es": "bienes raices en El Paso"},

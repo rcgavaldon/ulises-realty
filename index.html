@@ -175,7 +175,7 @@
 
   /* SERVICES */
   .services{background:#fff}
-  .svc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:26px;margin-top:38px}
+  .svc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:26px;margin-top:38px}
   @media(max-width:860px){.svc-grid{grid-template-columns:1fr}}
   .svc{border:1px solid var(--line);border-radius:14px;padding:28px 26px;background:var(--paper)}
   .svc .ic{font-size:1.6rem}
@@ -311,6 +311,7 @@
       <p data-i18n="hero_p">Buying your first home or selling your current one — I handle the search, the negotiation, and the paperwork, in English o en español. You'll never wait on a callback again.</p>
       <div class="hero-ctas">
         <a href="#listings" class="btn btn-gold" data-i18n="hero_cta1">View Listings</a>
+        <a href="#contact" class="btn btn-ghost" onclick="pickInterest('rent')" data-i18n="hero_cta3">Looking to Rent</a>
         <a href="#value" class="btn btn-ghost" data-i18n="hero_cta2">What's My Home Worth?</a>
       </div>
       <div class="stat-bar">
@@ -478,6 +479,12 @@
         <p data-i18n="s3_p">Curious what your house is worth in today's market? I'll run a real comparative market analysis — no obligation, no spam, just the number.</p>
         <a href="#contact" data-i18n="s3_a">Get my home's value →</a>
       </div>
+      <div class="svc">
+        <div class="ic">🔑</div>
+        <h3 data-i18n="s4_h">For Renters</h3>
+        <p data-i18n="s4_p">Not ready to buy yet? I'll help you find a rental that fits — and when you are ready to buy, you'll already have someone who knows exactly what you're looking for.</p>
+        <a href="#contact" onclick="pickInterest('rent')" data-i18n="s4_a">Find me a rental →</a>
+      </div>
     </div>
   </div>
 </section>
@@ -561,6 +568,7 @@
             <div><label data-i18n="fl_interest">I WANT TO… *</label>
               <select name="interest" required>
                 <option value="buy" data-i18n="fl_buy">Buy a home</option>
+                <option value="rent" data-i18n="fl_rent">Rent a home</option>
                 <option value="sell" data-i18n="fl_sell">Sell my home</option>
                 <option value="value" data-i18n="fl_value">Get my home's value</option>
                 <option value="other" data-i18n="fl_other">Something else</option>
@@ -677,7 +685,9 @@ const I18N = {
     hero_eyebrow:"REALTOR® · El Paso, TX · Bilingüe EN/ES",
     hero_h1:'Tu próxima casa en El Paso empieza con <em>una conversación</em>.',
     hero_p:"Comprar tu primera casa o vender la actual — yo me encargo de la búsqueda, la negociación y el papeleo, en español or in English. Nunca más esperarás una llamada de vuelta.",
-    hero_cta1:"Ver Casas", hero_cta2:"¿Cuánto Vale Mi Casa?",
+    hero_cta1:"Ver Casas", hero_cta2:"¿Cuánto Vale Mi Casa?", hero_cta3:"Busco Rentar",
+    s4_h:"Para Rentar", s4_p:"¿Todavía no listo para comprar? Te ayudo a encontrar una renta que te acomode — y cuando estés listo para comprar, ya tendrás a alguien que sabe exactamente qué buscas.", s4_a:"Búscame una renta →",
+    fl_rent:"Rentar una casa",
     stat1:"respuesta promedio", stat2:"servicio 100% bilingüe", stat3:"nacido y criado en El Paso",
     badge_role:"REALTOR® · English Spoken",
     speed_strip:"<b>Respuesta inmediata:</b>&nbsp;pregunta por cualquier casa y mi asistente te llama en menos de un minuto — días, noches y fines de semana.",
@@ -769,6 +779,12 @@ function renderListings(){
         </div>
       </div>
     </div>`).join("");
+}
+
+// Jump to the form with the right intent already chosen.
+function pickInterest(v){
+  const sel = document.querySelector('#leadForm select[name="interest"]');
+  if(sel) sel.value = v;
 }
 
 // ── Hot homes render (swap point for the Flexmls hot sheet feed) ────────────
