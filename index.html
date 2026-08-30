@@ -581,6 +581,26 @@
               </select>
             </div>
           </div>
+          <div class="frow">
+            <div><label data-i18n="fl_prequal">PRE-QUALIFIED WITH A LENDER?</label>
+              <select name="prequalified">
+                <option value="" data-i18n="fl_pq0">— select —</option>
+                <option value="yes" data-i18n="fl_pq_y">Yes, I'm pre-qualified</option>
+                <option value="no" data-i18n="fl_pq_n">Not yet</option>
+                <option value="cash" data-i18n="fl_pq_c">Paying cash</option>
+              </select>
+            </div>
+            <div><label data-i18n="fl_ownrent">DO YOU CURRENTLY OWN OR RENT?</label>
+              <select name="own_rent">
+                <option value="" data-i18n="fl_pq0">— select —</option>
+                <option value="rent" data-i18n="fl_or_r">I rent</option>
+                <option value="own" data-i18n="fl_or_o">I own</option>
+                <option value="family" data-i18n="fl_or_f">Living with family</option>
+              </select>
+            </div>
+          </div>
+          <label data-i18n="fl_move">EXPECTED MOVE DATE <span style="font-weight:500;color:var(--muted)" data-i18n="fl_opt">(optional)</span></label>
+          <input name="move_date" type="month">
           <label data-i18n="fl_addr">PROPERTY ADDRESS <span style="font-weight:500;color:var(--muted)">(optional — yours, or one you're asking about)</span></label>
           <input name="address" data-i18n-ph="fl_addr_ph" placeholder="1523 Cimarron Ridge Dr, El Paso, TX 79912">
           <label data-i18n="fl_msg">TELL ME MORE</label>
@@ -680,6 +700,10 @@ const I18N = {
     v_save_p:"Si NO está registrada, estás pagando de más esa cantidad cada año. Se arregla con un formulario — pregúntame.",
     v_nohs_h:"Podrías estar pagando de más aprox.",
     v_nohs_p:"cada año sin la exención de homestead. Es gratis registrarla y es dinero de vuelta en tu bolsa.",
+    fl_prequal:"¿PRE-CALIFICADO CON UN BANCO?", fl_pq0:"— elige —",
+    fl_pq_y:"Sí, ya estoy pre-calificado", fl_pq_n:"Todavía no", fl_pq_c:"Pago de contado",
+    fl_ownrent:"¿ACTUALMENTE RENTAS O ERES DUEÑO?", fl_or_r:"Rento", fl_or_o:"Soy dueño", fl_or_f:"Vivo con familia",
+    fl_move:'FECHA ESPERADA DE MUDANZA <span style="font-weight:500;color:var(--muted)">(opcional)</span>', fl_opt:"(opcional)",
     fl_addr:'DIRECCIÓN DE LA PROPIEDAD <span style="font-weight:500;color:var(--muted)">(opcional — la tuya, o una que te interesa)</span>',
     fl_addr_ph:"1523 Cimarron Ridge Dr, El Paso, TX 79912",
     hero_eyebrow:"REALTOR® · El Paso, TX · Bilingüe EN/ES",
@@ -780,6 +804,37 @@ function renderListings(){
       </div>
     </div>`).join("");
 }
+
+// ── Live MLS feed ───────────────────────────────────────────────────────────
+// Once the Flexmls/Spark sync is live server-side, this swaps the sample data
+// for the real cached feed. Fails silently back to samples — the page never
+// depends on the API being up.
+(async function loadLiveFeed(){
+  try{
+    const r = await fetch(API_BASE + "/listings-feed");
+    const d = await r.json();
+    if(!d.live) return;
+    if(Array.isArray(d.hot) && d.hot.length){
+      window.HOT_LISTINGS = d.hot.map(l => ({
+        price: l.price, address: l.address, area: l.area,
+        beds: l.beds, baths: l.baths, sqft: l.sqft || 0,
+        hot: { en: l.hot_tag || "Hot", es: l.hot_tag_es || l.hot_tag || "Hot" },
+        note: { en: l.note || "", es: l.note_es || l.note || "" },
+        img: l.img || ""
+      }));
+    }
+    if(Array.isArray(d.featured) && d.featured.length){
+      window.SAMPLE_LISTINGS = d.featured.map(l => ({
+        price: l.price, address: l.address, area: l.area,
+        beds: l.beds, baths: l.baths, sqft: l.sqft || 0,
+        tag: { en: l.status || "Active", es: l.status || "Activa" },
+        img: l.img || ""
+      }));
+    }
+    document.querySelectorAll(".idx-note").forEach(el => el.style.display = "none");
+    renderListings(); renderHot();
+  }catch(e){ /* keep samples */ }
+})();
 
 // Jump to the form with the right intent already chosen.
 function pickInterest(v){
@@ -915,6 +970,9 @@ async function submitLead(e){
     email: f.email.value.trim(),
     interest: f.interest.value,
     language: f.language.value,
+    prequalified: f.prequalified.value,
+    own_rent: f.own_rent.value,
+    move_date: f.move_date.value,
     address: f.address.value.trim(),
     message: f.message.value.trim(),
     consent: f.consent.checked,

@@ -3,6 +3,8 @@ on:
   schedule:
     - cron: "*/5 * * * *"    # retry tick — server enforces El Paso quiet hours, off-hours ticks are no-ops
     - cron: "15 15 * * 1"    # weekly ROI report, Mon 9:15am MT (15:15 UTC during MDT)
+    - cron: "5 12 * * *"     # Flexmls daily pull, 6:05am MT
+    - cron: "5 18 * * *"     # Flexmls BACKUP check, 12:05pm MT — re-pulls only if the morning pull missed
   workflow_dispatch:
 
 jobs:
@@ -14,6 +16,24 @@ jobs:
         run: |
           curl -s -X POST "https://roberto-gavaldon3--ulises-realty-api-api.modal.run/cron/retry" \
             -H "x-cron-token: ${{ secrets.CRON_TOKEN }}" -m 60
+
+  spark-daily:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '5 12 * * *'
+    steps:
+      - name: fire daily Flexmls sync
+        run: |
+          curl -s -X POST "https://roberto-gavaldon3--ulises-realty-api-api.modal.run/cron/spark-sync" \
+            -H "x-cron-token: ${{ secrets.CRON_TOKEN }}" -m 120
+
+  spark-backup:
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '5 18 * * *'
+    steps:
+      - name: backup check — sync only if the daily pull missed
+        run: |
+          curl -s -X POST "https://roberto-gavaldon3--ulises-realty-api-api.modal.run/cron/spark-check" \
+            -H "x-cron-token: ${{ secrets.CRON_TOKEN }}" -m 120
 
   weekly-report:
     runs-on: ubuntu-latest

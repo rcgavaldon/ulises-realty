@@ -32,7 +32,7 @@ image = (
         "fastapi[standard]==0.115.*", "httpx", "retell-sdk",
         "google-api-python-client", "google-auth", "tzdata",
     )
-    .add_local_python_source("listings_data", "property_data")
+    .add_local_python_source("listings_data", "property_data", "spark_client")
 )
 app = modal.App("ulises-realty-api")
 state = modal.Dict.from_name("ulises-realty-state", create_if_missing=True)
@@ -113,6 +113,9 @@ def _place_call(lead: dict) -> str:
                 "call_direction": "outbound_callback",
                 "property": lead.get("address") or "none given",
                 "valuation": lead.get("valuation_line") or "none run",
+                "prequalified": lead.get("prequalified") or "unknown",
+                "own_or_rent": lead.get("own_rent") or "unknown",
+                "move_date": lead.get("move_date") or "unknown",
             },
             metadata={"source": "ulises-realty", "phone": lead["phone"]},
         )
@@ -186,6 +189,33 @@ def api():
         weekly_report()
         return {"ok": True}
 
+    # Daily Flexmls pull. A second backup schedule hits /cron/spark-check,
+    # which re-pulls only if the daily one didn't land — belt and suspenders.
+    @web.post("/cron/spark-sync")
+    def cron_spark_sync(req: Request):
+        if req.headers.get("x-cron-token") != os.environ.get("CRON_TOKEN"):
+            return JSONResponse({"error": "forbidden"}, status_code=403)
+        return spark_sync(force=True)
+
+    @web.post("/cron/spark-check")
+    def cron_spark_check(req: Request):
+        if req.headers.get("x-cron-token") != os.environ.get("CRON_TOKEN"):
+            return JSONResponse({"error": "forbidden"}, status_code=403)
+        return spark_sync(force=False)
+
+    # Public: the site pulls its listing data from here once the feed is live.
+    @web.get("/listings-feed")
+    def listings_feed():
+        cache = state.get("listings_cache", None)
+        if not cache or not cache.get("featured"):
+            return {"live": False}
+        return {
+            "live": True,
+            "synced_at": cache.get("ts"),
+            "featured": cache.get("featured", []),
+            "hot": cache.get("hot", []),
+        }
+
     # ── form submit ──────────────────────────────────────────────────────────
     @web.post("/lead")
     async def lead(req: Request):
@@ -224,6 +254,9 @@ def api():
             "email": str(body.get("email", "")).strip()[:120],
             "address": address,
             "valuation_line": valuation_line,
+            "prequalified": str(body.get("prequalified", "")).strip()[:20],
+            "own_rent": str(body.get("own_rent", "")).strip()[:20],
+            "move_date": str(body.get("move_date", "")).strip()[:20],
             "ts": time.time(),
         }
 
@@ -248,6 +281,12 @@ def api():
                 f"Wants: {interest_key} · Lang: {lang.upper()}"]
         if address:
             card.append(f"Property: {address}")
+        quals = [x for x in (
+            f"prequal: {lead_rec['prequalified']}" if lead_rec["prequalified"] else "",
+            f"now: {lead_rec['own_rent']}" if lead_rec["own_rent"] else "",
+            f"move: {lead_rec['move_date']}" if lead_rec["move_date"] else "") if x]
+        if quals:
+            card.append(" · ".join(quals))
         if valuation_line:
             card.append(f"Ran value tool: {valuation_line}")
         card.append(f"Note: {lead_rec['message'][:120]}")
@@ -373,6 +412,9 @@ def api():
                     "call_direction": "inbound",
                     "property": (known or {}).get("address") or "none given",
                     "valuation": (known or {}).get("valuation_line") or "none run",
+                    "prequalified": (known or {}).get("prequalified") or "unknown",
+                    "own_or_rent": (known or {}).get("own_rent") or "unknown",
+                    "move_date": (known or {}).get("move_date") or "unknown",
                 },
                 agent_override={"retell_llm": {"begin_message": begin}},
             )
@@ -454,11 +496,43 @@ def api():
             body = {}
         args = body.get("args", body) or {}
         hot_only = str(args.get("hot_only", "")).lower() in ("true", "yes", "1")
-        res = search(
-            area=args.get("area"), max_price=args.get("max_price"),
-            min_beds=args.get("min_beds"), address=args.get("address"),
-            hot_only=hot_only,
-        )[:3]
+
+        # Prefer the live Flexmls cache once the sync is running.
+        cache = state.get("listings_cache", None)
+        if cache and cache.get("featured"):
+            rows = cache.get("hot", []) if hot_only else cache.get("featured", [])
+            q_addr = str(args.get("address") or "").lower()
+            q_area = str(args.get("area") or "").lower()
+            res = []
+            for l in rows:
+                if q_addr and not any(t in str(l.get("address", "")).lower()
+                                      for t in q_addr.split() if len(t) > 2):
+                    continue
+                if q_area and q_area not in str(l.get("area", "")).lower() \
+                        and q_area not in str(l.get("city", "")).lower():
+                    continue
+                try:
+                    if args.get("max_price") and l.get("price", 0) > float(args["max_price"]) * 1.10:
+                        continue
+                    if args.get("min_beds") and (l.get("beds") or 0) < int(args["min_beds"]):
+                        continue
+                except (TypeError, ValueError):
+                    pass
+                res.append({
+                    "address": l.get("address", ""), "area": l.get("area", ""),
+                    "price": int(l.get("price") or 0), "beds": l.get("beds") or "?",
+                    "baths": l.get("baths") or "?", "sqft": int(l.get("sqft") or 0),
+                    "status": l.get("status", "Active"),
+                    "highlights": l.get("public_remarks") or "",
+                    "hot": l.get("hot_tag", "") if hot_only else "",
+                })
+            res = res[:3]
+        else:
+            res = search(
+                area=args.get("area"), max_price=args.get("max_price"),
+                min_beds=args.get("min_beds"), address=args.get("address"),
+                hot_only=hot_only,
+            )[:3]
         if not res:
             return {"result": "No exact matches in Ulises's current featured listings. Tell the caller Ulises has full MLS access and will pull matching homes for them personally."}
         out = []
@@ -511,6 +585,48 @@ def api():
             return {"result": f"Could not book ({str(e)[:80]}). Take their preferred time and tell them Ulises will confirm it personally."}
 
     return web
+
+
+# ── Flexmls daily sync (fired by GitHub Actions: a daily pull + a staggered
+# backup check that only re-pulls if the daily one didn't land) ──────────────
+SPARK_STALE_AFTER = 26 * 3600   # backup re-pulls past this age
+SPARK_ALERT_AFTER = 50 * 3600   # owner gets an SMS past this age (2 misses)
+
+
+def spark_sync(force: bool):
+    import spark_client
+    if not spark_client.configured():
+        return {"ok": True, "live": False, "note": "SPARK_TOKEN not set — dormant"}
+
+    cache = state.get("listings_cache", {}) or {}
+    age = time.time() - cache.get("ts", 0)
+    if not force and age < SPARK_STALE_AFTER:
+        return {"ok": True, "skipped": "fresh", "age_h": round(age / 3600, 1)}
+
+    try:
+        featured = spark_client.my_listings()
+        hot_raw = spark_client.hot_sheet()
+        hot = []
+        for l in hot_raw[:6]:
+            tag, tag_es = "Just Listed", "Recién Publicada"
+            if l.get("price_change"):
+                tag, tag_es = "Price Change", "Cambio de Precio"
+            hot.append({**l, "hot_tag": tag, "hot_tag_es": tag_es,
+                        "note": l.get("public_remarks", "")[:90],
+                        "note_es": ""})
+        if not featured and not hot:
+            raise RuntimeError("Spark returned no listings")
+        state["listings_cache"] = {"ts": time.time(), "featured": featured[:12], "hot": hot}
+        state["spark_fail_note"] = ""
+        return {"ok": True, "featured": len(featured), "hot": len(hot)}
+    except Exception as e:
+        err = str(e)[:200]
+        state["spark_fail_note"] = err
+        # alert only when the feed is genuinely stale (both timers missed)
+        if age > SPARK_ALERT_AFTER and cache:
+            _sms_owner(f"⚠️ ULISES SITE: Flexmls feed hasn't synced in {int(age/3600)}h. "
+                       f"Site is serving the last good pull. Err: {err[:100]}")
+        return {"ok": False, "error": err, "age_h": round(age / 3600, 1)}
 
 
 # ── redial cadence worker (fired by GitHub Actions cron — Modal's 5-schedule
