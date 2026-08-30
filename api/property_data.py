@@ -26,57 +26,80 @@ import os
 import re
 
 # ── Tax rates ────────────────────────────────────────────────────────────────
-# Combined rate per $100 of taxable value, split into the pieces a homeowner
-# actually sees on their statement. "school" is broken out separately because
-# the Texas homestead exemption applies to the school portion.
-# ⚠️ MODELED — verify against the county rate sheet before each tax season.
+# REAL 2025 ADOPTED RATES per $100 of taxable value (verified 2026-08-30).
+# "school" is broken out separately because the Texas homestead exemption
+# applies only to the school-district portion.
+#
+# Sources: El Paso County Tax Office 2025 rate notices, City of El Paso FY2026
+# adopted rate, and district adoptions as reported Aug-Sep 2025.
+#   City of El Paso ....... 0.759649    El Paso County ........ 0.458889
+#   UMC hospital district . 0.240892    El Paso Comm. College . 0.103563
+#   EPISD ................. 1.080700    Ysleta ISD ............ 1.200500
+#   Socorro ISD ........... 0.938900    Clint ISD ............. 1.122400
+#   Canutillo ISD ......... 1.152500    San Elizario ISD ...... 0.885300
+#   Horizon City .......... 0.535368    City of Socorro ....... 0.645233
+#
+# Countywide non-school base (county + UMC + EPCC) = 0.803344; inside El Paso
+# city limits add the city rate -> 1.562993, which matches the county's own
+# published "about $1.563" figure for the four non-school authorities.
+#
+# CROSS-CHECK: a $280,000 EPISD home inside the city with a homestead exemption
+# computes to $5,889/yr here, matching the published worked example exactly.
+#
+# ⚠️ RE-VERIFY EACH FALL — districts adopt new rates in Aug/Sep.
+_COUNTY_BASE = 0.458889 + 0.240892 + 0.103563   # county + hospital + college
+_CITY_EP = 0.759649
+
 JURISDICTIONS = {
     "el_paso_episd": {
         "label": "City of El Paso / EPISD",
-        "school": 1.05,
-        "other": 1.74,        # city + county + hospital district + community college
+        "school": 1.0807,
+        "other": round(_COUNTY_BASE + _CITY_EP, 4),
     },
     "el_paso_ysleta": {
         "label": "City of El Paso / Ysleta ISD",
-        "school": 1.19,
-        "other": 1.74,
+        "school": 1.2005,
+        "other": round(_COUNTY_BASE + _CITY_EP, 4),
     },
     "el_paso_socorro": {
         "label": "City of El Paso / Socorro ISD",
-        "school": 1.24,
-        "other": 1.74,
+        "school": 0.9389,
+        "other": round(_COUNTY_BASE + _CITY_EP, 4),
     },
     "horizon_city": {
         "label": "Horizon City / Clint ISD",
-        "school": 1.14,
-        "other": 1.32,
+        "school": 1.1224,
+        "other": round(_COUNTY_BASE + 0.535368, 4),
     },
     "socorro": {
-        "label": "Socorro / Socorro ISD",
-        "school": 1.24,
-        "other": 1.28,
+        "label": "City of Socorro / Socorro ISD",
+        "school": 0.9389,
+        "other": round(_COUNTY_BASE + 0.645233, 4),
     },
     "canutillo": {
-        "label": "Canutillo ISD (county)",
-        "school": 1.16,
-        "other": 1.05,
+        "label": "Canutillo ISD (unincorporated county)",
+        "school": 1.1525,
+        "other": round(_COUNTY_BASE, 4),
     },
     "county_other": {
         "label": "El Paso County (unincorporated)",
-        "school": 1.10,
-        "other": 1.05,
+        "school": 0.8853,          # San Elizario ISD, the common far-county case
+        "other": round(_COUNTY_BASE, 4),
     },
 }
 
-# Texas school-district homestead exemption (SB 4, approved by voters Nov 2025).
-# ⚠️ VERIFY: confirm the current amount before each tax season.
+# Texas school-district homestead exemption: SB 4 / Proposition 13 raised it
+# from $100,000 to $140,000, approved by voters Nov 2025, applies to the 2026
+# tax year. Verified 2026-08-30.
 HOMESTEAD_SCHOOL_EXEMPTION = 140_000
 
 # ── Area model ───────────────────────────────────────────────────────────────
 # ppsf = modeled price per finished square foot; med_sqft = typical home size,
 # used only when the homeowner doesn't know their square footage.
 AREAS = {
-    "upper valley":  {"ppsf": 192, "med_sqft": 2200, "juris": "canutillo"},
+    # 79922 Upper Valley is mostly inside El Paso city limits / EPISD;
+    # 79932 (Westway/Canutillo) is unincorporated Canutillo ISD — see ZIP_AREA.
+    "upper valley":  {"ppsf": 192, "med_sqft": 2200, "juris": "el_paso_episd"},
     "west side":     {"ppsf": 186, "med_sqft": 2100, "juris": "el_paso_episd"},
     "cimarron":      {"ppsf": 190, "med_sqft": 2300, "juris": "el_paso_episd"},
     "coronado":      {"ppsf": 195, "med_sqft": 2400, "juris": "el_paso_episd"},
@@ -104,8 +127,9 @@ ZIP_AREA = {
     "79907": "east side",   "79908": "fort bliss",  "79911": "west side",
     "79912": "west side",   "79915": "east side",   "79916": "fort bliss",
     "79918": "fort bliss",  "79922": "upper valley", "79924": "northeast",
+    "79932": "canutillo",
     "79925": "east side",   "79927": "socorro",     "79928": "horizon city",
-    "79930": "central",     "79932": "upper valley", "79934": "northeast",
+    "79930": "central",     "79934": "northeast",
     "79935": "east side",   "79936": "far east",    "79938": "far east",
 }
 
