@@ -269,7 +269,8 @@
     .stat-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:34px;padding-top:20px}
     .stat{min-width:0;flex:none}
     .stat b{font-size:1.3rem;white-space:nowrap}
-    .stat span{font-size:.7rem;display:block;line-height:1.35}
+    /* direct child only — a bare .stat span also hits the small "s" inside <b> */
+    .stat > span{font-size:.7rem;display:block;line-height:1.35}
     .portrait-card img{height:400px}
     .speed-in{font-size:.83rem;padding:12px 16px}
     .lphoto{height:180px}
