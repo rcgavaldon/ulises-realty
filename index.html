@@ -284,6 +284,10 @@
     .vcard{padding:22px 18px}
     .vbig{font-size:1.55rem}
     .vbox .n{font-size:1.3rem}
+    .hero-ctas{gap:10px}
+    .hero-ctas .btn{padding:11px 18px;font-size:.86rem;flex:1 1 auto;text-align:center;min-width:0;white-space:nowrap}
+    .btn,.submit,.vbtn{max-width:100%}
+    .listings-head .btn,.hot-head .btn{padding:11px 18px;font-size:.86rem}
   }
 </style>
 </head>
@@ -385,6 +389,11 @@
       <h3 data-i18n="v_form_h">Check My Home</h3>
       <p class="vhint" data-i18n="v_form_hint">Address is all I need. The rest just tightens the estimate.</p>
       <form id="valueForm" onsubmit="return runValue(event)">
+        <div class="frow">
+          <div><label data-i18n="fl_name">FULL NAME *</label><input name="vname" required placeholder="Maria Gonzalez"></div>
+          <div><label data-i18n="fl_phone">PHONE *</label><input name="vphone" type="tel" required placeholder="(915) 555-0123"></div>
+        </div>
+        <label data-i18n="fl_email">EMAIL</label><input name="vemail" type="email" placeholder="you@email.com">
         <label data-i18n="v_addr">PROPERTY ADDRESS *</label>
         <input name="address" required data-i18n-ph="v_addr_ph" placeholder="1523 Cimarron Ridge Dr, El Paso, TX 79912">
         <div class="frow">
@@ -414,7 +423,12 @@
             </select>
           </div>
         </div>
+        <div class="consent">
+          <input type="checkbox" name="vconsent" required>
+          <span data-i18n="v_consent">Show me my estimate instantly. I agree Ulises and his assistant may call and/or text me about my property. Msg &amp; data rates may apply. Not a condition of any purchase.</span>
+        </div>
         <button class="vbtn" id="valueBtn" data-i18n="v_submit">Show My Numbers →</button>
+        <p class="vhint" style="margin-top:8px;text-align:center" data-i18n="v_gate_note">You see the estimate right away — and Ulises gets your info so he can pull the exact county numbers for you.</p>
       </form>
 
       <div class="vout" id="valueOut">
@@ -431,25 +445,9 @@
         <div class="vsave" id="vSave" style="display:none"></div>
         <p class="vdisc" data-i18n="v_disc">Estimate only — modeled from El Paso County area values and current tax rates. Not an official appraisal, tax statement, or offer. Ulises will pull your exact county figures and a full comparative market analysis on request.</p>
 
-        <div class="vnext">
-          <h4 data-i18n="v_next_h">Want the exact numbers?</h4>
-          <p data-i18n="v_next_p">Leave your name and number — Sofia calls you in about a minute with this pulled up, and Ulises follows up with the real county figures and a full market analysis.</p>
-          <form id="valueLeadForm" onsubmit="return submitValueLead(event)">
-            <div class="frow">
-              <div><label data-i18n="fl_name">FULL NAME *</label><input name="name" required placeholder="Maria Gonzalez"></div>
-              <div><label data-i18n="fl_phone">PHONE *</label><input name="phone" type="tel" required placeholder="(915) 555-0123"></div>
-            </div>
-            <div class="consent">
-              <input type="checkbox" name="consent" required>
-              <span data-i18n="fl_consent">I agree to receive a call and/or text from Ulises and his assistant about my inquiry. Msg &amp; data rates may apply. This is not a condition of any purchase.</span>
-            </div>
-            <button class="submit" id="valueLeadBtn" data-i18n="v_next_cta">Call Me With My Numbers →</button>
-          </form>
-          <div class="success" id="valueLeadOk" style="padding:22px 6px">
-            <div class="big">📞</div>
-            <h3 data-i18n="ok_h">Your phone is about to ring!</h3>
-            <p style="color:#b6c2d2" data-i18n="v_ok_p">Sofia is calling from a (505) number with your address already pulled up.</p>
-          </div>
+        <div class="vnext" id="vCalling">
+          <h4>📞 <span data-i18n="v_next_h2">Sofia is calling you now</span></h4>
+          <p data-i18n="v_next_p2">She has your address and these numbers already pulled up — answer from the (505) number and she'll get you the exact county figures and a time with Ulises.</p>
         </div>
       </div>
     </div>
@@ -527,6 +525,14 @@
   </div>
 </section>
 
+<section id="media" style="display:none">
+  <div class="wrap">
+    <div class="eyebrow" data-i18n="m_eyebrow">Watch</div>
+    <h2 data-i18n="m_h2">Home Tours &amp; Market Updates</h2>
+    <div id="media-module" class="grid3" style="margin-top:30px"></div>
+  </div>
+</section>
+
 <section class="about" id="about">
   <div class="wrap about-grid">
     <div class="about-photo"><img src="assets/ulises-casual.jpg" alt="Ulises"></div>
@@ -566,10 +572,11 @@
           <label data-i18n="fl_email">EMAIL</label><input name="email" type="email" placeholder="you@email.com">
           <div class="frow">
             <div><label data-i18n="fl_interest">I WANT TO… *</label>
-              <select name="interest" required>
+              <select name="interest" required onchange="onIntent(this.value)">
                 <option value="buy" data-i18n="fl_buy">Buy a home</option>
-                <option value="rent" data-i18n="fl_rent">Rent a home</option>
                 <option value="sell" data-i18n="fl_sell">Sell my home</option>
+                <option value="buysell" data-i18n="fl_buysell">Sell &amp; buy my next home</option>
+                <option value="rent" data-i18n="fl_rent">Rent a home</option>
                 <option value="value" data-i18n="fl_value">Get my home's value</option>
                 <option value="other" data-i18n="fl_other">Something else</option>
               </select>
@@ -590,7 +597,7 @@
             <label data-i18n="fl_slot">PICK YOUR TIME (EL PASO TIME) *</label>
             <select name="slot_iso" id="slotSel"><option value="" data-i18n="fl_loading">loading open times…</option></select>
           </div>
-          <div class="frow">
+          <div class="frow" id="qualRow">
             <div><label data-i18n="fl_prequal">PRE-QUALIFIED WITH A LENDER?</label>
               <select name="prequalified">
                 <option value="" data-i18n="fl_pq0">— select —</option>
@@ -608,8 +615,10 @@
               </select>
             </div>
           </div>
-          <label data-i18n="fl_move">EXPECTED MOVE DATE <span style="font-weight:500;color:var(--muted)" data-i18n="fl_opt">(optional)</span></label>
-          <input name="move_date" type="month">
+          <div id="moveWrap">
+            <label data-i18n="fl_move">EXPECTED MOVE DATE <span style="font-weight:500;color:var(--muted)" data-i18n="fl_opt">(optional)</span></label>
+            <input name="move_date" type="month">
+          </div>
           <label data-i18n="fl_addr">PROPERTY ADDRESS <span style="font-weight:500;color:var(--muted)">(optional — yours, or one you're asking about)</span></label>
           <input name="address" data-i18n-ph="fl_addr_ph" placeholder="1523 Cimarron Ridge Dr, El Paso, TX 79912">
           <label data-i18n="fl_msg">TELL ME MORE</label>
@@ -619,7 +628,7 @@
             <span data-i18n="fl_consent">I agree to receive a call and/or text from Ulises and his assistant about my inquiry. Msg &amp; data rates may apply. This is not a condition of any purchase.</span>
           </div>
           <button class="submit" id="submitBtn" data-i18n="fl_submit">Get My Call in 60 Seconds →</button>
-          <p class="form-note" data-i18n="fl_note">⚡ Sofia, my assistant, will call you right away.</p>
+          <p class="form-note" id="formNote" data-i18n="fl_note">⚡ Sofia, my assistant, will call you right away.</p>
         </div>
         <div class="success" id="formSuccess">
           <div class="big">📞</div>
@@ -760,7 +769,12 @@ const I18N = {
     c_sub:"Llena esto y tu teléfono suena en un minuto — mi asistente Sofía toma tus datos y yo te doy seguimiento personal. Incluye noches y fines de semana.",
     cb1:"Llamada de vuelta: menos de 60 segundos", cb2:"Español or English — you choose", cb3:"Tu información se queda conmigo. Nunca se vende, nunca spam.",
     fl_name:"NOMBRE COMPLETO *", fl_phone:"TELÉFONO *", fl_email:"CORREO", fl_interest:"QUIERO… *",
-    fl_buy:"Comprar casa", fl_sell:"Vender mi casa", fl_value:"Saber el valor de mi casa", fl_other:"Otra cosa",
+    fl_buy:"Comprar casa", fl_sell:"Vender mi casa", fl_buysell:"Vender y comprar mi siguiente casa", fl_value:"Saber el valor de mi casa", fl_other:"Otra cosa",
+    v_consent:"Muéstrame mi estimado al instante. Acepto que Ulises y su asistente me llamen y/o manden texto sobre mi propiedad. Pueden aplicar tarifas. No es condición de compra.",
+    v_gate_note:"Ves el estimado de inmediato — y Ulises recibe tus datos para conseguirte las cifras exactas del condado.",
+    v_next_h2:"Sofía te está llamando ahora",
+    v_next_p2:"Ya tiene tu dirección y estos números en pantalla — contesta el número (505) y te consigue las cifras exactas del condado y una cita con Ulises.",
+    m_eyebrow:"Videos", m_h2:"Recorridos de Casas y Noticias del Mercado",
     fl_lang:"IDIOMA PREFERIDO", fl_msg:"CUÉNTAME MÁS", fl_msg_ph:"ej. Busco 4 recámaras en el West Side, menos de $400k…",
     fl_consent:"Acepto recibir una llamada y/o mensaje de texto de Ulises y su asistente sobre mi solicitud. Pueden aplicar tarifas de mensajes y datos. No es condición de compra.",
     fl_submit:"Recibir Mi Llamada en 60 Segundos →", fl_note:"⚡ Sofía, mi asistente, te llamará de inmediato.",
@@ -796,6 +810,7 @@ function applyLang(){
   document.documentElement.lang = LANG;
   renderListings();
   renderHot();
+  renderMedia();
 }
 function toggleLang(){ LANG = LANG==="en" ? "es" : "en"; applyLang(); }
 
@@ -806,7 +821,7 @@ function renderListings(){
   const fmt = n => "$" + n.toLocaleString("en-US");
   const t = (en,es) => LANG==="es" ? es : en;
   root.innerHTML = window.SAMPLE_LISTINGS.map(l => `
-    <div class="lcard">
+    ${l.url?`<a href="${l.url}" target="_blank" rel="noopener" class="lcard" style="color:inherit;display:block">`:`<div class="lcard">`}
       <div class="lphoto">
         <span class="ltag">${LANG==="es" ? l.tag.es : l.tag.en}</span>
         <img src="${l.img}" alt="${l.address}" loading="lazy" onerror="this.remove()">
@@ -821,7 +836,7 @@ function renderListings(){
           <span><b>${l.sqft.toLocaleString()}</b> sqft</span>
         </div>
       </div>
-    </div>`).join("");
+    ${l.url?`</a>`:`</div>`}`).join("");
 }
 
 // ── Live MLS feed ───────────────────────────────────────────────────────────
@@ -839,7 +854,7 @@ function renderListings(){
         beds: l.beds, baths: l.baths, sqft: l.sqft || 0,
         hot: { en: l.hot_tag || "Hot", es: l.hot_tag_es || l.hot_tag || "Hot" },
         note: { en: l.note || "", es: l.note_es || l.note || "" },
-        img: l.img || ""
+        img: l.img || "", url: l.url || ""
       }));
     }
     if(Array.isArray(d.featured) && d.featured.length){
@@ -847,7 +862,7 @@ function renderListings(){
         price: l.price, address: l.address, area: l.area,
         beds: l.beds, baths: l.baths, sqft: l.sqft || 0,
         tag: { en: l.status || "Active", es: l.status || "Activa" },
-        img: l.img || ""
+        img: l.img || "", url: l.url || ""
       }));
     }
     document.querySelectorAll(".idx-note").forEach(el => el.style.display = "none");
@@ -858,7 +873,20 @@ function renderListings(){
 // Jump to the form with the right intent already chosen.
 function pickInterest(v){
   const sel = document.querySelector('#leadForm select[name="interest"]');
-  if(sel) sel.value = v;
+  if(sel){ sel.value = v; onIntent(v); }
+}
+
+// ── Media module (dormant until MEDIA_LINKS has entries) ────────────────────
+function renderMedia(){
+  const sec = document.getElementById("media");
+  const root = document.getElementById("media-module");
+  const items = window.MEDIA_LINKS || [];
+  if(!sec || !root || !items.length){ if(sec) sec.style.display="none"; return; }
+  sec.style.display = "block";
+  root.innerHTML = items.map(m => m.type === "youtube"
+    ? `<div class="lcard"><div style="position:relative;padding-top:56.25%"><iframe src="https://www.youtube-nocookie.com/embed/${m.id}" title="${(LANG==="es"?m.title?.es:m.title?.en)||""}" style="position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:14px 14px 0 0" allowfullscreen loading="lazy"></iframe></div><div class="lbody"><div class="laddr">${(LANG==="es"?m.title?.es:m.title?.en)||""}</div></div></div>`
+    : `<a class="lcard" href="${m.url}" target="_blank" rel="noopener"><div class="lbody"><div class="laddr">▶ ${(LANG==="es"?m.title?.es:m.title?.en)||m.url}</div></div></a>`
+  ).join("");
 }
 
 // ── Hot homes render (swap point for the Flexmls hot sheet feed) ────────────
@@ -868,7 +896,7 @@ function renderHot(){
   const fmt = n => "$" + n.toLocaleString("en-US");
   const t = (en,es) => LANG==="es" ? es : en;
   root.innerHTML = window.HOT_LISTINGS.map(l => `
-    <div class="hcard">
+    ${l.url?`<a href="${l.url}" target="_blank" rel="noopener" class="hcard" style="color:inherit">`:`<div class="hcard">`}
       <div class="hphoto">
         <span class="hribbon">🔥 ${LANG==="es" ? l.hot.es : l.hot.en}</span>
         <img src="${l.img}" alt="${l.address}" loading="lazy" onerror="this.remove()">
@@ -884,7 +912,7 @@ function renderHot(){
           <span><b>${l.sqft.toLocaleString()}</b> sqft</span>
         </div>
       </div>
-    </div>`).join("");
+    ${l.url?`</a>`:`</div>`}`).join("");
 }
 
 // ── Home value + property tax tool ──────────────────────────────────────────
@@ -913,6 +941,17 @@ async function runValue(e){
     if(!d.ok) throw new Error("no estimate");
     LAST_VALUE = d;
     paintValue(d, f.homestead.value === "yes");
+    // they're a lead the moment they see the numbers — Sofia calls with them up
+    fetch(LEAD_ENDPOINT, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        name: f.vname.value.trim(), phone: f.vphone.value.trim(),
+        email: f.vemail.value.trim(), interest: "value", language: LANG,
+        address: LAST_ADDRESS, valuation: d,
+        message: "Ran the home value tool for " + LAST_ADDRESS,
+        consent: f.vconsent.checked, source: "ulises-realty-value-tool"
+      })
+    }).catch(()=>{});
   }catch(err){
     alert(S("v_err") || "I couldn't price that address. Double-check it, or leave me your number and I'll do it by hand.");
   }
@@ -953,49 +992,42 @@ function paintValue(d, hs){
   document.getElementById("valueOut").scrollIntoView({behavior:"smooth", block:"nearest"});
 }
 
-async function submitValueLead(e){
-  e.preventDefault();
-  const f = e.target;
-  const btn = document.getElementById("valueLeadBtn");
-  btn.disabled = true;
-  const payload = {
-    name: f.name.value.trim(),
-    phone: f.phone.value.trim(),
-    interest: "value",
-    language: LANG,
-    address: LAST_ADDRESS,
-    valuation: LAST_VALUE,
-    message: LAST_ADDRESS ? `Ran the home value tool for ${LAST_ADDRESS}` : "Ran the home value tool",
-    consent: f.consent.checked,
-    source: "ulises-realty-value-tool"
-  };
-  try{
-    await fetch(LEAD_ENDPOINT, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload)});
-  }catch(err){ /* server-side alert has its own fallback */ }
-  f.style.display = "none";
-  document.getElementById("valueLeadOk").style.display = "block";
-  return false;
+// ── Intent-aware form: only show questions that fit what they picked ────────
+function onIntent(v){
+  const buyish = (v === "buy" || v === "buysell");
+  document.getElementById("qualRow").style.display = buyish ? "grid" : "none";
+  document.getElementById("moveWrap").style.display =
+    (v === "value" || v === "other") ? "none" : "block";
 }
 
 // ── Call-time picker (direct booking skips the insta-call) ──────────────────
-let SLOTS_LOADED = false;
+// Slots are prefetched at page load so the picker opens instantly.
+let SLOTS_LOADED = false, SLOTS_PROMISE = null;
+function prefetchSlots(){
+  SLOTS_PROMISE = fetch(API_BASE + "/slots").then(r=>r.json()).then(d=>{
+    const s = document.getElementById("slotSel");
+    if((d.slots||[]).length){
+      s.innerHTML = d.slots.map(x=>`<option value="${x.iso}">${x.label}</option>`).join("");
+      SLOTS_LOADED = true;
+    } else {
+      s.innerHTML = `<option value="">${LANG==="es"?"no hay horarios — Sofía te llama ya":"no open times — Sofia will call you now"}</option>`;
+    }
+  }).catch(()=>{ /* ASAP path still works */ });
+}
 async function onCallTime(sel){
-  const wrap = document.getElementById("slotWrap");
   const isPick = sel.value === "pick";
-  wrap.style.display = isPick ? "block" : "none";
+  document.getElementById("slotWrap").style.display = isPick ? "block" : "none";
   document.getElementById("slotSel").required = isPick;
-  if(isPick && !SLOTS_LOADED){
-    try{
-      const r = await fetch(API_BASE + "/slots");
-      const d = await r.json();
-      const s = document.getElementById("slotSel");
-      if((d.slots||[]).length){
-        s.innerHTML = d.slots.map(x=>`<option value="${x.iso}">${x.label}</option>`).join("");
-        SLOTS_LOADED = true;
-      } else {
-        s.innerHTML = `<option value="">${LANG==="es"?"no hay horarios — Sofía te llama ya":"no open times — Sofia will call you now"}</option>`;
-      }
-    }catch(e){ /* leave loading text; ASAP path still works */ }
+  // the promise button + note follow the choice
+  const btn = document.getElementById("submitBtn"), note = document.getElementById("formNote");
+  const t = (en,es)=> LANG==="es"?es:en;
+  if(isPick){
+    btn.textContent = t("Book My Call Time →","Reservar Mi Hora →");
+    note.textContent = t("🗓️ You pick the time — Ulises calls you then.","🗓️ Tú eliges la hora — Ulises te llama entonces.");
+    if(!SLOTS_LOADED && SLOTS_PROMISE) await SLOTS_PROMISE;
+  } else {
+    btn.textContent = t("Get My Call in 60 Seconds →","Recibir Mi Llamada en 60 Segundos →");
+    note.textContent = t("⚡ Sofia, my assistant, will call you right away.","⚡ Sofía, mi asistente, te llamará de inmediato.");
   }
 }
 
@@ -1043,6 +1075,8 @@ async function submitLead(e){
 }
 
 applyLang();
+prefetchSlots();
+onIntent(document.querySelector('#leadForm select[name="interest"]').value);
 </script>
 </body>
 </html>

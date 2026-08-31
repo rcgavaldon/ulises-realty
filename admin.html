@@ -84,7 +84,7 @@
 
   <div class="card scroll" style="margin-top:18px">
     <h2>Recent Leads</h2>
-    <table><thead><tr><th>When</th><th>Name</th><th>Phone</th><th>Wants</th><th>Pre-qual</th><th>Now</th><th>Move</th><th>Property</th></tr></thead><tbody id="leads"></tbody></table>
+    <table><thead><tr><th>Level</th><th>When</th><th>Name</th><th>Phone</th><th>Wants</th><th>Pre-qual</th><th>Now</th><th>Move</th><th>Property</th></tr></thead><tbody id="leads"></tbody></table>
   </div>
 
   <div class="card scroll" style="margin-top:18px">
@@ -98,6 +98,11 @@ const API = "https://roberto-gavaldon3--ulises-realty-api-api.modal.run";
 const DAYS = ["mon","tue","wed","thu","fri","sat","sun"];
 let TOKEN = "";
 try { TOKEN = localStorage.getItem("ur_admin_tok") || ""; } catch(e){}
+// magic link: admin.html#t=TOKEN — no typing, per-client links come later
+if(location.hash.startsWith("#t=")){
+  TOKEN = decodeURIComponent(location.hash.slice(3));
+  try{ history.replaceState(null, "", location.pathname); }catch(e){}
+}
 
 async function api(path, opts={}){
   const r = await fetch(API+path, {...opts, headers:{"Content-Type":"application/json","x-admin-token":TOKEN,...(opts.headers||{})}});
@@ -152,9 +157,12 @@ async function load(){
   document.getElementById("buffer").value = s.buffer_min;
   document.getElementById("calid").value = s.cal_id||"";
 
+  const lvl = v => v==="hot" ? `<span class="tag" style="background:#fdecea;border-color:#f5c6bd;color:#b3402e">🔥 HOT</span>`
+    : v==="warm" ? `<span class="tag" style="background:#fff8e1;border-color:#eadfa8;color:#8a6d00">warm</span>`
+    : `<span class="tag">cold</span>`;
   document.getElementById("leads").innerHTML = (d.leads||[]).map(l=>
-    `<tr><td>${fmtTs(l.ts)}</td><td>${esc(l.name)}</td><td>${esc(l.phone)}</td><td><span class="tag">${esc(l.interest)}</span> ${l.lang==="es"?"🇲🇽":""}</td><td>${esc(l.prequalified)||"—"}</td><td>${esc(l.own_rent)||"—"}</td><td>${esc(l.move_date)||"—"}</td><td>${esc(l.address)||"—"}</td></tr>`
-  ).join("") || `<tr><td colspan="8" style="color:var(--muted)">No leads yet.</td></tr>`;
+    `<tr><td>${lvl(l.level)}</td><td>${fmtTs(l.ts)}</td><td>${esc(l.name)}</td><td>${esc(l.phone)}</td><td><span class="tag">${esc(l.interest)}</span> ${l.lang==="es"?"🇲🇽":""}</td><td>${esc(l.prequalified)||"—"}</td><td>${esc(l.own_rent)||"—"}</td><td>${esc(l.move_date)||"—"}</td><td>${esc(l.address)||"—"}</td></tr>`
+  ).join("") || `<tr><td colspan="9" style="color:var(--muted)">No leads yet.</td></tr>`;
 
   document.getElementById("bookings").innerHTML = (d.bookings||[]).map(b=>
     `<tr><td>${esc((b.start||"").replace("T"," ").slice(0,16))}</td><td>${esc(b.name)}</td><td>${esc(b.phone)}</td><td><span class="tag">${esc(b.purpose)}</span></td><td>${esc(b.property)||"—"}</td></tr>`

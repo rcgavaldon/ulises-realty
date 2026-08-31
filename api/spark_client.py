@@ -84,6 +84,10 @@ def _map(rec):
         # Attribution is an IDX display requirement — carry it through.
         "office": f.get("ListOfficeName") or "",
         "agent": f.get("ListAgentName") or "",
+        # Public shareable listing page (NOT the flexmls admin view).
+        # ⚠️ UNVERIFIED which field carries it — check the probe output; the
+        # Flexmls public portal link may need to be built from the ListingId.
+        "url": f.get("VirtualTourURLUnbranded") or f.get("ListingURL") or "",
     }
 
 

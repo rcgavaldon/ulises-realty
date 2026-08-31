@@ -19,6 +19,16 @@
 // All listings below are FICTIONAL samples for demo purposes.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Media module — YouTube home tours, walkthroughs, market updates.
+// EMPTY = the whole #media section stays hidden. To activate, add entries:
+//   { type: "youtube", id: "dQw4w9WgXcQ", title: {en:"...", es:"..."} }
+//   { type: "link", url: "https://...", title: {en:"...", es:"..."} }
+// Later this lives on the provisioning dashboard and updates client sites.
+window.MEDIA_LINKS = [];
+
+// Listings may carry a `url` (public Flexmls share link once the feed is live)
+// — cards become clickable and open the listing page in a new tab.
+
 // Hot sheet: new / price-improved / about-to-go. `hot` drives the flame ribbon.
 window.HOT_LISTINGS = [
   {

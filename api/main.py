@@ -116,6 +116,8 @@ def _place_call(lead: dict) -> str:
                 "prequalified": lead.get("prequalified") or "unknown",
                 "own_or_rent": lead.get("own_rent") or "unknown",
                 "move_date": lead.get("move_date") or "unknown",
+                "lead_level": _lead_level(lead),
+                "during_hours": "yes" if _during_hours() else "no",
             },
             metadata={"source": "ulises-realty", "phone": lead["phone"]},
         )
@@ -216,8 +218,69 @@ def _open_slots(day_dt, limit=3):
     return out
 
 
+def _lead_level(lead: dict) -> str:
+    """hot / warm / cold — an expected move date is the strongest intent signal."""
+    score = 0
+    if lead.get("move_date"):
+        score += 2
+    if lead.get("prequalified") in ("yes", "cash"):
+        score += 1
+    if lead.get("interest") in ("sell", "value", "buysell"):
+        score += 1
+    if len(lead.get("message", "")) > 25:
+        score += 1
+    return "hot" if score >= 2 else ("warm" if score == 1 else "cold")
+
+
+LEVEL_EMOJI = {"hot": "🔥 HOT LEAD", "warm": "🌤 Warm lead", "cold": "❄ Lead"}
+
+
+def _during_hours() -> bool:
+    """Inside the agent's bookable business hours right now?"""
+    dt = _now_local()
+    key = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"][dt.weekday()]
+    for w in _settings()["hours"].get(key, []):
+        try:
+            h1, m1 = map(int, w[0].split(":"))
+            h2, m2 = map(int, w[1].split(":"))
+            if (h1, m1) <= (dt.hour, dt.minute) < (h2, m2):
+                return True
+        except (ValueError, IndexError):
+            continue
+    return False
+
+
+def _rich_event(name, phone, purpose, prop, lead, source):
+    """Calendar event body Ulises can act on at a glance — not a dry title."""
+    lead = lead or {}
+    level = _lead_level(lead)
+    flag = {"hot": "🔥 ", "warm": "", "cold": ""}[level]
+    want = INTEREST.get(lead.get("interest", ""), {}).get("en", purpose)
+    summary = f"{flag}Call: {name} — {want}" if purpose == "consult" \
+        else f"{flag}{purpose.title()}: {name}" + (f" @ {prop}" if prop else "")
+    rows = [f"Lead level: {level.upper()}", f"Phone: {phone}"]
+    for label, key in (("Wants", "interest"), ("Pre-qualified", "prequalified"),
+                       ("Currently", "own_rent"), ("Move date", "move_date"),
+                       ("Property", "address"), ("Language", "lang"),
+                       ("Their note", "message")):
+        v = lead.get(key)
+        if v and v not in ("none", "ninguno"):
+            rows.append(f"{label}: {v}")
+    if prop and prop != lead.get("address"):
+        rows.append(f"Discussed property: {prop}")
+    if lead.get("valuation_line"):
+        rows.append(f"Value tool: {lead['valuation_line']}")
+    rows.append(f"Booked via: {source} — TENTATIVE until you confirm")
+    body = {"summary": summary, "description": "\n".join(rows)}
+    if level == "hot":
+        body["colorId"] = "11"   # tomato — jumps out on his calendar
+    return body
+
+
 INTEREST = {
     "buy":   {"en": "buying a home",         "es": "comprar casa"},
+    "buysell": {"en": "selling their home and buying their next one",
+                "es": "vender su casa y comprar la siguiente"},
     "rent":  {"en": "renting a home",        "es": "rentar una casa"},
     "sell":  {"en": "selling their home",    "es": "vender su casa"},
     "value": {"en": "a free home valuation", "es": "un avaluo gratis de su casa"},
@@ -254,7 +317,7 @@ def api():
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api", "rev": "slots-2"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "v5-intel"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.
@@ -332,13 +395,12 @@ def api():
                 return None
             s = _settings()
             svc = _cal_svc()
-            svc.events().insert(calendarId=_cal_id(), body={
-                "summary": f"[TENTATIVE] Phone Call — {name} (booked on site)",
-                "description": f"Self-booked on the website. Lead: {name} {phone}. {note}",
-                "start": {"dateTime": start.isoformat(), "timeZone": TZ},
-                "end": {"dateTime": (start + timedelta(minutes=s["slot_min"])).isoformat(),
-                        "timeZone": TZ},
-            }).execute()
+            lead = state.get(f"lead:{phone}", {})
+            body = _rich_event(name, phone, "consult", "", lead, "self-booked on the website")
+            body["start"] = {"dateTime": start.isoformat(), "timeZone": TZ}
+            body["end"] = {"dateTime": (start + timedelta(minutes=s["slot_min"])).isoformat(),
+                           "timeZone": TZ}
+            svc.events().insert(calendarId=_cal_id(), body=body).execute()
             _bump_stat("booked")
             bookings = state.get("bookings", [])
             bookings.append({"ts": time.time(), "start": start.isoformat(), "name": name,
@@ -437,7 +499,7 @@ def api():
         _bump_stat("leads")
         _bump_stat("calls_placed")
 
-        card = [f"🏠 ULISES DEMO LEAD", name, phone,
+        card = [f"{LEVEL_EMOJI[_lead_level(lead_rec)]} — ULISES SITE", name, phone,
                 f"Wants: {interest_key} · Lang: {lang.upper()}"]
         if address:
             card.append(f"Property: {address}")
@@ -586,6 +648,8 @@ def api():
                     "prequalified": (known or {}).get("prequalified") or "unknown",
                     "own_or_rent": (known or {}).get("own_rent") or "unknown",
                     "move_date": (known or {}).get("move_date") or "unknown",
+                    "lead_level": _lead_level(known or {}),
+                    "during_hours": "yes" if _during_hours() else "no",
                 },
                 agent_override={"retell_llm": {"begin_message": begin}},
             )
@@ -766,15 +830,11 @@ def api():
                 return {"result": f"Ulises already has something at that time. "
                                   f"{'Offer ' + alt + ' instead.' if alt else 'Ask for another day.'}"}
 
-            title = f"[TENTATIVE] {purpose.title()} — {name}"
-            if prop:
-                title += f" @ {prop}"
-            svc.events().insert(calendarId=_cal_id(), body={
-                "summary": title,
-                "description": f"Booked by Sofia (AI). Lead: {name} {phone}. Purpose: {purpose}. Property: {prop or 'n/a'}.",
-                "start": {"dateTime": start.isoformat(), "timeZone": TZ},
-                "end": {"dateTime": end.isoformat(), "timeZone": TZ},
-            }).execute()
+            lead = state.get(f"lead:{phone}", {})
+            body = _rich_event(name, phone, purpose, prop, lead, "booked by Sofia on a call")
+            body["start"] = {"dateTime": start.isoformat(), "timeZone": TZ}
+            body["end"] = {"dateTime": end.isoformat(), "timeZone": TZ}
+            svc.events().insert(calendarId=_cal_id(), body=body).execute()
             _bump_stat("booked")
             bookings = state.get("bookings", [])
             bookings.append({"ts": time.time(), "start": start.isoformat(), "name": name,
@@ -827,9 +887,11 @@ def api():
         for ph in (state.get("lead_index", []) or [])[-30:][::-1]:
             l = state.get(f"lead:{ph}", None)
             if l:
-                leads.append({k: l.get(k, "") for k in
-                              ("name", "phone", "interest", "lang", "address",
-                               "prequalified", "own_rent", "move_date", "ts")})
+                row = {k: l.get(k, "") for k in
+                       ("name", "phone", "interest", "lang", "address",
+                        "prequalified", "own_rent", "move_date", "ts")}
+                row["level"] = _lead_level(l)
+                leads.append(row)
         cache = state.get("listings_cache", {}) or {}
         return {
             "week": state.get(f"stats:{wk[0]}-w{wk[1]}", {}),
