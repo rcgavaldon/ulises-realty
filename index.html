@@ -581,6 +581,15 @@
               </select>
             </div>
           </div>
+          <label data-i18n="fl_when">WHEN SHOULD WE CALL? *</label>
+          <select name="calltime" onchange="onCallTime(this)">
+            <option value="asap" data-i18n="fl_asap">⚡ Right now — Sofia calls me in ~60 seconds</option>
+            <option value="pick" data-i18n="fl_pick">📅 Let me pick a time for Ulises to call me</option>
+          </select>
+          <div id="slotWrap" style="display:none;margin-top:10px">
+            <label data-i18n="fl_slot">PICK YOUR TIME (EL PASO TIME) *</label>
+            <select name="slot_iso" id="slotSel"><option value="" data-i18n="fl_loading">loading open times…</option></select>
+          </div>
           <div class="frow">
             <div><label data-i18n="fl_prequal">PRE-QUALIFIED WITH A LENDER?</label>
               <select name="prequalified">
@@ -616,6 +625,11 @@
           <div class="big">📞</div>
           <h3 data-i18n="ok_h">Your phone is about to ring!</h3>
           <p data-i18n="ok_p">Sofia is calling you now from a (505) number. Answer and tell her what you're looking for — I'll have it all before we talk.</p>
+        </div>
+        <div class="success" id="formScheduled">
+          <div class="big">🗓️</div>
+          <h3 data-i18n="sch_h">You're on the calendar!</h3>
+          <p><span data-i18n="sch_p">Ulises will call you</span> <b id="schWhen"></b>. <span data-i18n="sch_p2">You'll get a text confirmation in a moment.</span></p>
         </div>
       </form>
     </div>
@@ -700,6 +714,11 @@ const I18N = {
     v_save_p:"Si NO está registrada, estás pagando de más esa cantidad cada año. Se arregla con un formulario — pregúntame.",
     v_nohs_h:"Podrías estar pagando de más aprox.",
     v_nohs_p:"cada año sin la exención de homestead. Es gratis registrarla y es dinero de vuelta en tu bolsa.",
+    fl_when:"¿CUÁNDO TE LLAMAMOS? *",
+    fl_asap:"⚡ Ahora mismo — Sofía me llama en ~60 segundos",
+    fl_pick:"📅 Quiero elegir una hora para que Ulises me llame",
+    fl_slot:"ELIGE TU HORA (HORA DE EL PASO) *", fl_loading:"cargando horarios…",
+    sch_h:"¡Ya estás en el calendario!", sch_p:"Ulises te llamará el", sch_p2:"Recibirás un texto de confirmación en un momento.",
     fl_prequal:"¿PRE-CALIFICADO CON UN BANCO?", fl_pq0:"— elige —",
     fl_pq_y:"Sí, ya estoy pre-calificado", fl_pq_n:"Todavía no", fl_pq_c:"Pago de contado",
     fl_ownrent:"¿ACTUALMENTE RENTAS O ERES DUEÑO?", fl_or_r:"Rento", fl_or_o:"Soy dueño", fl_or_f:"Vivo con familia",
@@ -958,6 +977,28 @@ async function submitValueLead(e){
   return false;
 }
 
+// ── Call-time picker (direct booking skips the insta-call) ──────────────────
+let SLOTS_LOADED = false;
+async function onCallTime(sel){
+  const wrap = document.getElementById("slotWrap");
+  const isPick = sel.value === "pick";
+  wrap.style.display = isPick ? "block" : "none";
+  document.getElementById("slotSel").required = isPick;
+  if(isPick && !SLOTS_LOADED){
+    try{
+      const r = await fetch(API_BASE + "/slots");
+      const d = await r.json();
+      const s = document.getElementById("slotSel");
+      if((d.slots||[]).length){
+        s.innerHTML = d.slots.map(x=>`<option value="${x.iso}">${x.label}</option>`).join("");
+        SLOTS_LOADED = true;
+      } else {
+        s.innerHTML = `<option value="">${LANG==="es"?"no hay horarios — Sofía te llama ya":"no open times — Sofia will call you now"}</option>`;
+      }
+    }catch(e){ /* leave loading text; ASAP path still works */ }
+  }
+}
+
 // ── Lead submit ──────────────────────────────────────────────────────────────
 async function submitLead(e){
   e.preventDefault();
@@ -976,19 +1017,28 @@ async function submitLead(e){
     address: f.address.value.trim(),
     message: f.message.value.trim(),
     consent: f.consent.checked,
+    slot_iso: (f.calltime.value === "pick" && f.slot_iso.value) ? f.slot_iso.value : "",
     source: "ulises-realty-demo"
   };
+  let scheduled = "";
   if(LEAD_ENDPOINT){
     try{
-      await fetch(LEAD_ENDPOINT, {
+      const r = await fetch(LEAD_ENDPOINT, {
         method:"POST",
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify(payload)
       });
+      const d = await r.json();
+      scheduled = d.scheduled || "";
     }catch(err){ /* still show success — lead alert has server-side fallback */ }
   }
   document.getElementById("formFields").style.display = "none";
-  document.getElementById("formSuccess").style.display = "block";
+  if(scheduled){
+    document.getElementById("schWhen").textContent = scheduled;
+    document.getElementById("formScheduled").style.display = "block";
+  } else {
+    document.getElementById("formSuccess").style.display = "block";
+  }
   return false;
 }
 

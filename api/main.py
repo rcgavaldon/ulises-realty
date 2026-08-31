@@ -254,7 +254,7 @@ def api():
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "slots-2"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.
@@ -298,6 +298,55 @@ def api():
             "featured": cache.get("featured", []),
             "hot": cache.get("hot", []),
         }
+
+    # ── public: open phone-call slots for the site's booking picker ──────────
+    @web.get("/slots")
+    def slots():
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(TZ)
+        out = []
+        base = datetime.now(tz)
+        for d in range(0, 5):
+            day = (base + timedelta(days=d)).replace(hour=12, minute=0, second=0, microsecond=0)
+            for slot in _open_slots(day, limit=4):
+                # ASCII only — non-ASCII here mojibakes through the Windows mount
+                out.append({"iso": slot.isoformat(),
+                            "label": slot.strftime("%a %b %d, %I:%M %p").replace(", 0", ", ")})
+            if len(out) >= 8:
+                break
+        return {"slots": out[:8], "slot_min": _settings()["slot_min"]}
+
+    def _direct_book(name: str, phone: str, start_iso: str, lang: str, note: str):
+        """Site picked a slot -> event on the calendar, no instant call.
+        Returns label on success, None if the slot is gone."""
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(TZ)
+        try:
+            start = datetime.fromisoformat(start_iso)
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=tz)
+            day = start.replace(hour=12, minute=0)
+            if start not in _open_slots(day, limit=50):
+                return None
+            s = _settings()
+            svc = _cal_svc()
+            svc.events().insert(calendarId=_cal_id(), body={
+                "summary": f"[TENTATIVE] Phone Call — {name} (booked on site)",
+                "description": f"Self-booked on the website. Lead: {name} {phone}. {note}",
+                "start": {"dateTime": start.isoformat(), "timeZone": TZ},
+                "end": {"dateTime": (start + timedelta(minutes=s["slot_min"])).isoformat(),
+                        "timeZone": TZ},
+            }).execute()
+            _bump_stat("booked")
+            bookings = state.get("bookings", [])
+            bookings.append({"ts": time.time(), "start": start.isoformat(), "name": name,
+                             "phone": phone, "purpose": "consult (site)", "property": ""})
+            state["bookings"] = bookings[-200:]
+            return start.strftime("%A %b %d at %I:%M %p").replace(" 0", " ")
+        except Exception:
+            return None
 
     # ── form submit ──────────────────────────────────────────────────────────
     @web.post("/lead")
@@ -361,6 +410,29 @@ def api():
             idx.remove(phone)
         idx.append(phone)
         state["lead_index"] = idx[-500:]
+
+        # They picked a slot on the site -> book it, no instant call.
+        slot_iso = str(body.get("slot_iso", "")).strip()
+        if slot_iso:
+            label = _direct_book(name, phone, slot_iso, lang,
+                                 f"Wants: {interest_key}. Note: {lead_rec['message'][:150]}")
+            if label:
+                _bump_stat("leads")
+                if lang == "es":
+                    _sms(phone, f"Confirmado: Ulises Ortega le llamará el {label} (hora de El Paso). Si necesita cambiarla, responda a este mensaje. Responda STOP para no ser contactado.")
+                else:
+                    _sms(phone, f"Confirmed: Ulises Ortega will call you {label} (El Paso time). Reply here if you need to change it. Reply STOP to opt out.")
+                card = [f"🗓️ ULISES SITE BOOKING (no insta-call)", name, phone,
+                        f"Phone call: {label}", f"Wants: {interest_key} · Lang: {lang.upper()}"]
+                try:
+                    import sierra_client
+                    if sierra_client.push_lead(lead_rec):
+                        card.append("→ pushed to Sierra CRM")
+                except Exception:
+                    pass
+                _sms_owner("\n".join(card))
+                return JSONResponse({"ok": True, "scheduled": label})
+            # slot vanished -> fall through to the instant call so no lead is lost
         call_status = _place_call(lead_rec)
         _bump_stat("leads")
         _bump_stat("calls_placed")
