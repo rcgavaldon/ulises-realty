@@ -58,8 +58,13 @@
   /* NAV */
   nav{position:sticky;top:0;z-index:50;background:rgba(14,27,44,.94);backdrop-filter:blur(8px);color:#fff}
   .nav-in{display:flex;align-items:center;justify-content:space-between;height:62px}
-  .brand{font-family:'Playfair Display',serif;font-size:1.25rem;letter-spacing:.06em}
+  .brand{font-family:'Playfair Display',serif;font-size:1.25rem;letter-spacing:.06em;
+         display:flex;flex-direction:column;line-height:1.15}
   .brand b{color:var(--gold-soft);font-weight:600}
+  .brand-broker{display:flex;align-items:center;gap:6px;font-family:'Inter',sans-serif;
+                font-size:.66rem;letter-spacing:.16em;text-transform:uppercase;
+                color:var(--gold-soft);font-weight:600;margin-top:2px}
+  .brand-broker img{height:14px;width:auto;max-width:60px;object-fit:contain}
   .nav-links{display:flex;gap:26px;align-items:center;font-size:.9rem}
   .nav-links a{opacity:.85;white-space:nowrap}.nav-links a:hover{opacity:1;color:var(--gold-soft)}
   .lang-btn{border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:4px 14px;background:none;color:#fff;cursor:pointer;font-size:.8rem;font-weight:600;letter-spacing:.05em}
@@ -85,6 +90,9 @@
   .portrait-badge{position:absolute;left:14px;bottom:14px;right:14px;background:rgba(14,27,44,.82);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:12px 16px}
   .portrait-badge .nm{font-family:'Playfair Display',serif;font-size:1.15rem}
   .portrait-badge .rl{font-size:.75rem;color:var(--gold-soft);letter-spacing:.14em;text-transform:uppercase}
+  .brokerage{display:flex;align-items:center;gap:8px;margin-top:9px;padding-top:9px;
+             border-top:1px solid rgba(255,255,255,.16);font-size:.76rem;color:#c7d0dd;letter-spacing:.03em}
+  .brokerage img{height:22px;width:auto;max-width:96px;object-fit:contain}
   .stat-bar{display:flex;gap:0;margin-top:46px;border-top:1px solid rgba(255,255,255,.14);padding-top:26px;flex-wrap:wrap}
   .stat{flex:1;min-width:120px}
   .stat b{display:block;font-family:'Playfair Display',serif;font-size:1.6rem;color:var(--gold-soft)}
@@ -256,8 +264,9 @@
      any shared property and mobile silently reverts (it did — .stat-bar went
      back to flex and the stat row collapsed to two columns). ──────────────── */
   @media(max-width:600px){
-    .brand{font-size:1rem;letter-spacing:.03em;white-space:nowrap}
-    .brand .brand-sub{display:none}
+    .brand{font-size:.95rem;letter-spacing:.02em;white-space:nowrap}
+    .brand-broker{font-size:.58rem;letter-spacing:.1em}
+    .brand-broker img{height:12px}
     .nav-in{height:54px;gap:8px}
     .nav-links{gap:10px}
     .nav-links a.hide-sm{display:none}
@@ -295,7 +304,13 @@
 
 <nav>
   <div class="wrap nav-in">
-    <a href="#" class="brand">ULISES ORTEGA<span class="brand-sub"> <b>·</b> <span data-i18n="nav_brand">REAL ESTATE</span></span></a>
+    <a href="#" class="brand">
+      <span class="brand-name">ULISES ORTEGA</span>
+      <span class="brand-broker">
+        <img src="assets/brokerage-logo.png" alt="" onerror="this.remove()">
+        Clear View Realty
+      </span>
+    </a>
     <div class="nav-links">
       <a href="#hot" class="hideable" data-i18n="nav_hot">Hot Homes</a>
       <a href="#listings" class="hideable" data-i18n="nav_listings">Listings</a>
@@ -329,6 +344,11 @@
       <div class="portrait-badge">
         <div class="nm">Ulises Ortega</div>
         <div class="rl" data-i18n="badge_role">REALTOR® · Se Habla Español</div>
+        <div class="brokerage">
+          <!-- drop assets/brokerage-logo.png in and it appears automatically -->
+          <img src="assets/brokerage-logo.png" alt="Clear View Realty" onerror="this.remove()">
+          <span>Clear View Realty</span>
+        </div>
       </div>
     </div>
   </div>
@@ -539,7 +559,7 @@
     <div>
       <div class="eyebrow" data-i18n="a_eyebrow">About Me</div>
       <h2 data-i18n="a_h2">Born in El Paso. Working for El Paso.</h2>
-      <p data-i18n="a_p1">I'm Ulises Ortega — a bilingual REALTOR® serving El Paso and the surrounding area. I got into real estate for one reason: too many families here get rushed, ignored, or talked over during the biggest purchase of their lives. That doesn't happen on my watch.</p>
+      <p data-i18n="a_p1">I'm Ulises Ortega — a bilingual REALTOR® with Clear View Realty, serving El Paso and the surrounding area. I got into real estate for one reason: too many families here get rushed, ignored, or talked over during the biggest purchase of their lives. That doesn't happen on my watch.</p>
       <p data-i18n="a_p2">Whether you're PCSing to Fort Bliss, buying your first home on the East Side, or selling in the Upper Valley — you get straight answers, real availability, and someone who negotiates like it's his own money on the table.</p>
       <div class="chip-row">
         <span class="chip" data-i18n="chip1">🇺🇸🇲🇽 Bilingual EN/ES</span>
