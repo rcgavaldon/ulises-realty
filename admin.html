@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ulises Realty — Control Panel</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230e1b2c'/%3E%3Ctext x='32' y='44' font-family='Georgia,serif' font-size='36' font-weight='bold' fill='%23c9a227' text-anchor='middle'%3E⚙%3C/text%3E%3C/svg%3E">
+<style>
+  :root{--navy:#0e1b2c;--gold:#c9a227;--gold-soft:#e5c96b;--paper:#f5f2ea;--ink:#1b2430;--muted:#5b6472;--line:#e0dacb;--ok:#1e7a4f;--bad:#b3402e}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:Inter,system-ui,sans-serif;background:var(--paper);color:var(--ink);line-height:1.5;padding-bottom:60px}
+  header{background:var(--navy);color:#fff;padding:16px 22px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+  header h1{font-family:Georgia,serif;font-size:1.15rem;font-weight:600}
+  header h1 b{color:var(--gold-soft)}
+  .wrap{max-width:980px;margin:0 auto;padding:0 18px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:18px;margin-top:20px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+  .card h2{font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);margin-bottom:12px}
+  .stat-row{display:flex;flex-wrap:wrap;gap:14px}
+  .stat{min-width:90px}
+  .stat b{display:block;font-size:1.5rem;font-family:Georgia,serif;color:var(--navy)}
+  .stat span{font-size:.72rem;color:var(--muted)}
+  table{width:100%;border-collapse:collapse;font-size:.82rem}
+  th{text-align:left;color:var(--muted);font-weight:600;font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;padding:6px 8px;border-bottom:1px solid var(--line)}
+  td{padding:7px 8px;border-bottom:1px dashed var(--line);vertical-align:top}
+  .tag{display:inline-block;background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:1px 9px;font-size:.7rem;font-weight:600}
+  .pill-ok{color:var(--ok)} .pill-bad{color:var(--bad)}
+  .hours-grid{display:grid;grid-template-columns:52px 1fr 1fr 70px;gap:8px;align-items:center;margin-bottom:8px}
+  .hours-grid label{font-weight:700;font-size:.8rem;text-transform:uppercase}
+  input,select{padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font:inherit;font-size:.85rem;background:var(--paper);width:100%}
+  input:focus{outline:none;border-color:var(--gold)}
+  .closed input[type=time]{opacity:.3;pointer-events:none}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
+  button{background:var(--navy);color:#fff;border:none;padding:11px 22px;border-radius:999px;font-weight:700;font-size:.9rem;cursor:pointer;margin-top:14px}
+  button:hover{background:var(--gold);color:var(--navy)}
+  .note{font-size:.74rem;color:var(--muted);margin-top:10px}
+  #login{max-width:380px;margin:80px auto;text-align:center}
+  #panel{display:none}
+  .saved{color:var(--ok);font-size:.8rem;font-weight:700;margin-left:10px}
+  .scroll{overflow-x:auto}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ULISES REALTY <b>·</b> CONTROL PANEL</h1>
+  <div style="font-size:.75rem;opacity:.75">RG Automations · internal</div>
+</header>
+
+<div class="wrap" id="login">
+  <div class="card">
+    <h2>Access</h2>
+    <input type="password" id="tok" placeholder="access token" onkeydown="if(event.key==='Enter')unlock()">
+    <button onclick="unlock()">Open Panel</button>
+  </div>
+</div>
+
+<div class="wrap" id="panel">
+  <div class="grid">
+    <div class="card">
+      <h2>This Week</h2>
+      <div class="stat-row" id="stats"></div>
+    </div>
+    <div class="card">
+      <h2>MLS Feed</h2>
+      <div id="feed"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <h2>Business Hours <span style="text-transform:none;letter-spacing:0;color:var(--muted)">— Sofia only books inside these, cross-checked live against the Google Calendar</span></h2>
+    <div id="hours"></div>
+    <div class="row2">
+      <div><label style="font-size:.72rem;font-weight:700">APPOINTMENT LENGTH (MIN)</label><input type="number" id="slot" min="5" max="120"></div>
+      <div><label style="font-size:.72rem;font-weight:700">BUFFER AFTER (MIN)</label><input type="number" id="buffer" min="0" max="60"></div>
+    </div>
+    <div class="row2">
+      <div style="grid-column:1/3"><label style="font-size:.72rem;font-weight:700">CALENDAR ID <span style="font-weight:400;color:var(--muted)">(blank = demo calendar; set to Ulises's gmail once he shares it)</span></label><input type="text" id="calid" placeholder="e.g. ulises@gmail.com"></div>
+    </div>
+    <button onclick="saveSettings()">Save Settings</button><span class="saved" id="savedMsg"></span>
+    <p class="note">Booked slots block <b>length + buffer</b>. Anything already on the calendar (his own events included) is automatically unavailable — that's the cross-check.</p>
+  </div>
+
+  <div class="card scroll" style="margin-top:18px">
+    <h2>Recent Leads</h2>
+    <table><thead><tr><th>When</th><th>Name</th><th>Phone</th><th>Wants</th><th>Pre-qual</th><th>Now</th><th>Move</th><th>Property</th></tr></thead><tbody id="leads"></tbody></table>
+  </div>
+
+  <div class="card scroll" style="margin-top:18px">
+    <h2>Appointments Booked by Sofia</h2>
+    <table><thead><tr><th>Slot</th><th>Name</th><th>Phone</th><th>Purpose</th><th>Property</th></tr></thead><tbody id="bookings"></tbody></table>
+  </div>
+</div>
+
+<script>
+const API = "https://roberto-gavaldon3--ulises-realty-api-api.modal.run";
+const DAYS = ["mon","tue","wed","thu","fri","sat","sun"];
+let TOKEN = "";
+try { TOKEN = localStorage.getItem("ur_admin_tok") || ""; } catch(e){}
+
+async function api(path, opts={}){
+  const r = await fetch(API+path, {...opts, headers:{"Content-Type":"application/json","x-admin-token":TOKEN,...(opts.headers||{})}});
+  if(r.status===403) throw new Error("bad token");
+  return r.json();
+}
+
+async function unlock(){
+  TOKEN = document.getElementById("tok").value.trim();
+  try{
+    await load();
+    try{ localStorage.setItem("ur_admin_tok", TOKEN); }catch(e){}
+    document.getElementById("login").style.display="none";
+    document.getElementById("panel").style.display="block";
+  }catch(e){ alert("Wrong token."); }
+}
+
+function esc(s){ const d=document.createElement("div"); d.textContent=s??""; return d.innerHTML; }
+function fmtTs(t){ return t? new Date(t*1000).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}) : "—"; }
+
+async function load(){
+  const d = await api("/admin/overview");
+  const w = d.week||{};
+  document.getElementById("stats").innerHTML = [
+    ["leads","Leads in"],["calls_placed","Calls placed"],["connected","Connected"],
+    ["inbound","Inbound"],["value_lookups","Value lookups"],["booked","Booked"]
+  ].map(([k,l])=>`<div class="stat"><b>${w[k]||0}</b><span>${l}</span></div>`).join("") +
+  `<div class="stat"><b>${d.retry_queue}</b><span>in redial queue</span></div>`;
+
+  document.getElementById("feed").innerHTML = d.feed.live
+    ? `<span class="tag pill-ok">● LIVE</span> <span style="font-size:.8rem">last sync ${fmtTs(d.feed.synced_at)}</span>`
+    : `<span class="tag">● SAMPLES</span> <span style="font-size:.8rem;color:var(--muted)">Flexmls feed not connected yet${d.feed.fail_note?` — ${esc(d.feed.fail_note)}`:""}</span>`;
+
+  const s = d.settings;
+  document.getElementById("hours").innerHTML = DAYS.map(day=>{
+    const w0 = (s.hours[day]||[])[0]||["",""];
+    const closed = !(s.hours[day]||[]).length;
+    return `<div class="hours-grid ${closed?"closed":""}" id="hg-${day}">
+      <label>${day}</label>
+      <input type="time" id="${day}-a" value="${w0[0]||"09:00"}">
+      <input type="time" id="${day}-b" value="${w0[1]||"18:00"}">
+      <label style="font-size:.72rem;display:flex;gap:5px;align-items:center;text-transform:none">
+        <input type="checkbox" style="width:auto" id="${day}-c" ${closed?"checked":""}
+         onchange="document.getElementById('hg-${day}').classList.toggle('closed',this.checked)">off</label>
+    </div>`;
+  }).join("");
+  document.getElementById("slot").value = s.slot_min;
+  document.getElementById("buffer").value = s.buffer_min;
+  document.getElementById("calid").value = s.cal_id||"";
+
+  document.getElementById("leads").innerHTML = (d.leads||[]).map(l=>
+    `<tr><td>${fmtTs(l.ts)}</td><td>${esc(l.name)}</td><td>${esc(l.phone)}</td><td><span class="tag">${esc(l.interest)}</span> ${l.lang==="es"?"🇲🇽":""}</td><td>${esc(l.prequalified)||"—"}</td><td>${esc(l.own_rent)||"—"}</td><td>${esc(l.move_date)||"—"}</td><td>${esc(l.address)||"—"}</td></tr>`
+  ).join("") || `<tr><td colspan="8" style="color:var(--muted)">No leads yet.</td></tr>`;
+
+  document.getElementById("bookings").innerHTML = (d.bookings||[]).map(b=>
+    `<tr><td>${esc((b.start||"").replace("T"," ").slice(0,16))}</td><td>${esc(b.name)}</td><td>${esc(b.phone)}</td><td><span class="tag">${esc(b.purpose)}</span></td><td>${esc(b.property)||"—"}</td></tr>`
+  ).join("") || `<tr><td colspan="5" style="color:var(--muted)">Nothing booked yet.</td></tr>`;
+}
+
+async function saveSettings(){
+  const hours = {};
+  DAYS.forEach(day=>{
+    hours[day] = document.getElementById(day+"-c").checked ? [] :
+      [[document.getElementById(day+"-a").value||"09:00", document.getElementById(day+"-b").value||"18:00"]];
+  });
+  await api("/admin/settings", {method:"POST", body: JSON.stringify({
+    hours, slot_min: document.getElementById("slot").value,
+    buffer_min: document.getElementById("buffer").value,
+    cal_id: document.getElementById("calid").value.trim()
+  })});
+  const m = document.getElementById("savedMsg"); m.textContent="✓ saved"; setTimeout(()=>m.textContent="",2500);
+}
+
+if(TOKEN){ unlock(); document.getElementById("tok").value = TOKEN; }
+</script>
+</body>
+</html>

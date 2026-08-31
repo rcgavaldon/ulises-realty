@@ -133,6 +133,89 @@ def _bump_stat(key: str, n: int = 1):
     state[sk] = s
 
 
+# ── business hours / booking settings (editable from admin.html) ────────────
+DEFAULT_SETTINGS = {
+    "hours": {   # 24h "HH:MM" local El Paso; [] = closed
+        "mon": [["09:00", "18:00"]], "tue": [["09:00", "18:00"]],
+        "wed": [["09:00", "18:00"]], "thu": [["09:00", "18:00"]],
+        "fri": [["09:00", "18:00"]], "sat": [["10:00", "14:00"]],
+        "sun": [],
+    },
+    "slot_min": 20,      # appointment length
+    "buffer_min": 5,     # gap enforced after each appointment
+}
+
+
+def _settings():
+    s = dict(DEFAULT_SETTINGS)
+    s.update(state.get("settings", {}) or {})
+    return s
+
+
+def _cal_svc():
+    from google.oauth2 import service_account
+    from googleapiclient.discovery import build
+    info = json.loads(os.environ["GCP_SA_JSON"])
+    creds = service_account.Credentials.from_service_account_info(
+        info, scopes=["https://www.googleapis.com/auth/calendar"])
+    return build("calendar", "v3", credentials=creds)
+
+
+def _cal_id():
+    return (state.get("settings", {}) or {}).get("cal_id") or os.environ["CAL_ID"]
+
+
+def _busy_windows(svc, start, end):
+    """Google freebusy for the working calendar; [] on failure (fail-open,
+    the human confirms every tentative booking anyway)."""
+    try:
+        fb = svc.freebusy().query(body={
+            "timeMin": start.isoformat(), "timeMax": end.isoformat(),
+            "items": [{"id": _cal_id()}],
+        }).execute()
+        from datetime import datetime
+        return [(datetime.fromisoformat(b["start"].replace("Z", "+00:00")),
+                 datetime.fromisoformat(b["end"].replace("Z", "+00:00")))
+                for b in fb["calendars"][_cal_id()].get("busy", [])]
+    except Exception:
+        return []
+
+
+def _open_slots(day_dt, limit=3):
+    """Free slots on day_dt: business hours ∩ calendar free, slot+buffer sized."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo(TZ)
+    s = _settings()
+    step = timedelta(minutes=s["slot_min"] + s["buffer_min"])
+    dur = timedelta(minutes=s["slot_min"])
+    key = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"][day_dt.weekday()]
+    windows = s["hours"].get(key, [])
+    if not windows:
+        return []
+    svc = _cal_svc()
+    day_start = day_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    busy = _busy_windows(svc, day_start, day_start + timedelta(days=1))
+    now = datetime.now(tz)
+    out = []
+    for w in windows:
+        try:
+            h1, m1 = map(int, w[0].split(":"))
+            h2, m2 = map(int, w[1].split(":"))
+        except (ValueError, IndexError):
+            continue
+        cur = day_dt.replace(hour=h1, minute=m1, second=0, microsecond=0)
+        wend = day_dt.replace(hour=h2, minute=m2, second=0, microsecond=0)
+        while cur + dur <= wend:
+            pad_end = cur + dur + timedelta(minutes=s["buffer_min"])
+            if cur > now and not any(b0 < pad_end and b1 > cur for b0, b1 in busy):
+                out.append(cur)
+                if len(out) >= limit:
+                    return out
+            cur += step
+    return out
+
+
 INTEREST = {
     "buy":   {"en": "buying a home",         "es": "comprar casa"},
     "rent":  {"en": "renting a home",        "es": "rentar una casa"},
@@ -273,6 +356,11 @@ def api():
         state["ratelimit"] = rl
 
         state[f"lead:{phone}"] = lead_rec
+        idx = state.get("lead_index", [])
+        if phone in idx:
+            idx.remove(phone)
+        idx.append(phone)
+        state["lead_index"] = idx[-500:]
         call_status = _place_call(lead_rec)
         _bump_stat("leads")
         _bump_stat("calls_placed")
@@ -561,28 +649,137 @@ def api():
             return {"result": "Missing start time — ask the caller for a specific day and time."}
         try:
             from datetime import datetime, timedelta
-            from google.oauth2 import service_account
-            from googleapiclient.discovery import build
-            info = json.loads(os.environ["GCP_SA_JSON"])
-            creds = service_account.Credentials.from_service_account_info(
-                info, scopes=["https://www.googleapis.com/auth/calendar"])
-            svc = build("calendar", "v3", credentials=creds)
+            from zoneinfo import ZoneInfo
+            tz = ZoneInfo(TZ)
+            s = _settings()
             start = datetime.fromisoformat(start_iso)
-            end = start + timedelta(minutes=45)
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=tz)
+            end = start + timedelta(minutes=s["slot_min"])
+
+            # inside business hours?
+            key = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"][start.weekday()]
+            in_hours = False
+            for w in s["hours"].get(key, []):
+                h1, m1 = map(int, w[0].split(":"))
+                h2, m2 = map(int, w[1].split(":"))
+                if (start.hour, start.minute) >= (h1, m1) and \
+                        (end.hour, end.minute) <= (h2, m2):
+                    in_hours = True
+                    break
+            if not in_hours:
+                alts = _open_slots(start, limit=2)
+                alt = " or ".join(a.strftime("%I:%M %p").lstrip("0") for a in alts)
+                return {"result": f"That time is outside Ulises's hours that day. "
+                                  f"{'Offer ' + alt + ' instead.' if alt else 'Ask for a different day.'}"}
+
+            # conflict with his calendar (slot + buffer)?
+            svc = _cal_svc()
+            pad_end = end + timedelta(minutes=s["buffer_min"])
+            if any(b0 < pad_end and b1 > start
+                   for b0, b1 in _busy_windows(svc, start - timedelta(minutes=s["buffer_min"]), pad_end)):
+                alts = _open_slots(start, limit=2)
+                alt = " or ".join(a.strftime("%I:%M %p").lstrip("0") for a in alts)
+                return {"result": f"Ulises already has something at that time. "
+                                  f"{'Offer ' + alt + ' instead.' if alt else 'Ask for another day.'}"}
+
             title = f"[TENTATIVE] {purpose.title()} — {name}"
             if prop:
                 title += f" @ {prop}"
-            svc.events().insert(calendarId=os.environ["CAL_ID"], body={
+            svc.events().insert(calendarId=_cal_id(), body={
                 "summary": title,
                 "description": f"Booked by Sofia (AI). Lead: {name} {phone}. Purpose: {purpose}. Property: {prop or 'n/a'}.",
                 "start": {"dateTime": start.isoformat(), "timeZone": TZ},
                 "end": {"dateTime": end.isoformat(), "timeZone": TZ},
             }).execute()
             _bump_stat("booked")
+            bookings = state.get("bookings", [])
+            bookings.append({"ts": time.time(), "start": start.isoformat(), "name": name,
+                             "phone": phone, "purpose": purpose, "property": prop})
+            state["bookings"] = bookings[-200:]
             _sms_owner(f"📅 ULISES DEMO BOOKED\n{purpose} — {name} {phone}\n{start.strftime('%a %b %d %I:%M %p')} MT\n{prop or ''}\n(tentative — confirm with lead)")
             return {"result": f"Booked tentatively for {start.strftime('%A %B %d at %I:%M %p')}. Tell the caller Ulises will confirm shortly."}
         except Exception as e:
             return {"result": f"Could not book ({str(e)[:80]}). Take their preferred time and tell them Ulises will confirm it personally."}
+
+    @web.post("/tools/check-availability")
+    async def check_availability(req: Request):
+        """Sofia: open 20-minute slots on a given day (hours ∩ calendar free)."""
+        try:
+            body = await req.json()
+        except Exception:
+            body = {}
+        args = body.get("args", body) or {}
+        date_str = str(args.get("date") or "").strip()
+        try:
+            from datetime import datetime, timedelta
+            from zoneinfo import ZoneInfo
+            tz = ZoneInfo(TZ)
+            base = datetime.fromisoformat(date_str).replace(tzinfo=tz) if date_str \
+                else datetime.now(tz)
+            for d in range(0, 7):
+                day = (base + timedelta(days=d)).replace(hour=12, minute=0, second=0, microsecond=0)
+                slots = _open_slots(day, limit=3)
+                if slots:
+                    times = ", ".join(x.strftime("%I:%M %p").lstrip("0") for x in slots)
+                    return {"result": f"Open on {slots[0].strftime('%A %B %d')}: {times} "
+                                      f"(each is a {_settings()['slot_min']}-minute slot). Offer these."}
+                if date_str:
+                    return {"result": f"Nothing open on {day.strftime('%A %B %d')} — ask for another day."}
+            return {"result": "Nothing open this week — take their preferred time as a message and Ulises will confirm."}
+        except Exception as e:
+            return {"result": f"Couldn't check availability ({str(e)[:60]}). Take their preferred time and Ulises will confirm."}
+
+    # ── admin panel (token-guarded; page lives at /admin.html on the site) ───
+    def _admin_ok(req: Request) -> bool:
+        return req.headers.get("x-admin-token") == os.environ.get("CRON_TOKEN")
+
+    @web.get("/admin/overview")
+    def admin_overview(req: Request):
+        if not _admin_ok(req):
+            return JSONResponse({"error": "forbidden"}, status_code=403)
+        from datetime import date
+        wk = date.today().isocalendar()
+        leads = []
+        for ph in (state.get("lead_index", []) or [])[-30:][::-1]:
+            l = state.get(f"lead:{ph}", None)
+            if l:
+                leads.append({k: l.get(k, "") for k in
+                              ("name", "phone", "interest", "lang", "address",
+                               "prequalified", "own_rent", "move_date", "ts")})
+        cache = state.get("listings_cache", {}) or {}
+        return {
+            "week": state.get(f"stats:{wk[0]}-w{wk[1]}", {}),
+            "leads": leads,
+            "bookings": (state.get("bookings", []) or [])[-20:][::-1],
+            "retry_queue": len(state.get("retries", {}) or {}),
+            "feed": {"live": bool(cache.get("featured")), "synced_at": cache.get("ts"),
+                     "fail_note": state.get("spark_fail_note", "")},
+            "settings": _settings(),
+        }
+
+    @web.post("/admin/settings")
+    async def admin_settings(req: Request):
+        if not _admin_ok(req):
+            return JSONResponse({"error": "forbidden"}, status_code=403)
+        try:
+            body = await req.json()
+        except Exception:
+            return JSONResponse({"error": "bad json"}, status_code=400)
+        s = state.get("settings", {}) or {}
+        if isinstance(body.get("hours"), dict):
+            s["hours"] = {k: v for k, v in body["hours"].items()
+                          if k in DEFAULT_SETTINGS["hours"] and isinstance(v, list)}
+        for k in ("slot_min", "buffer_min"):
+            if body.get(k):
+                try:
+                    s[k] = max(5, min(120, int(body[k])))
+                except (TypeError, ValueError):
+                    pass
+        if "cal_id" in body:
+            s["cal_id"] = str(body["cal_id"]).strip()[:120]
+        state["settings"] = s
+        return {"ok": True, "settings": _settings()}
 
     return web
 
