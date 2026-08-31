@@ -127,9 +127,13 @@ async function load(){
   ].map(([k,l])=>`<div class="stat"><b>${w[k]||0}</b><span>${l}</span></div>`).join("") +
   `<div class="stat"><b>${d.retry_queue}</b><span>in redial queue</span></div>`;
 
-  document.getElementById("feed").innerHTML = d.feed.live
-    ? `<span class="tag pill-ok">● LIVE</span> <span style="font-size:.8rem">last sync ${fmtTs(d.feed.synced_at)}</span>`
-    : `<span class="tag">● SAMPLES</span> <span style="font-size:.8rem;color:var(--muted)">Flexmls feed not connected yet${d.feed.fail_note?` — ${esc(d.feed.fail_note)}`:""}</span>`;
+  const sierra = d.sierra||{};
+  document.getElementById("feed").innerHTML = (d.feed.live
+    ? `<span class="tag pill-ok">● MLS LIVE</span> <span style="font-size:.8rem">last sync ${fmtTs(d.feed.synced_at)}</span>`
+    : `<span class="tag">● MLS SAMPLES</span> <span style="font-size:.8rem;color:var(--muted)">Flexmls feed pending${d.feed.fail_note?` — ${esc(d.feed.fail_note)}`:""}</span>`)
+    + `<div style="margin-top:8px">` + (sierra.configured
+    ? `<span class="tag pill-ok">● SIERRA ON</span> <span style="font-size:.8rem;color:var(--muted)">${sierra.fail_note?esc(sierra.fail_note):"leads + call notes pushing to Sierra CRM"}</span>`
+    : `<span class="tag">● SIERRA OFF</span> <span style="font-size:.8rem;color:var(--muted)">waiting on the Sierra API key</span>`) + `</div>`;
 
   const s = d.settings;
   document.getElementById("hours").innerHTML = DAYS.map(day=>{

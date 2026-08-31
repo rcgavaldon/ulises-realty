@@ -32,7 +32,7 @@ image = (
         "fastapi[standard]==0.115.*", "httpx", "retell-sdk",
         "google-api-python-client", "google-auth", "tzdata",
     )
-    .add_local_python_source("listings_data", "property_data", "spark_client")
+    .add_local_python_source("listings_data", "property_data", "spark_client", "sierra_client")
 )
 app = modal.App("ulises-realty-api")
 state = modal.Dict.from_name("ulises-realty-state", create_if_missing=True)
@@ -379,6 +379,12 @@ def api():
             card.append(f"Ran value tool: {valuation_line}")
         card.append(f"Note: {lead_rec['message'][:120]}")
         card.append(f"Sofia call: {call_status[:80]}")
+        try:
+            import sierra_client
+            if sierra_client.push_lead(lead_rec):
+                card.append("→ pushed to Sierra CRM")
+        except Exception:
+            pass
         _sms_owner("\n".join(card))
         return JSONResponse({"ok": True, "call": call_status})
 
@@ -454,6 +460,11 @@ def api():
             rec = call.get("recording_url")
             if rec:
                 lines.append(f"Rec: {rec}")
+            try:
+                import sierra_client
+                sierra_client.add_call_note(phone, "\n".join(lines))
+            except Exception:
+                pass
             _sms_owner("\n".join(lines))
             return {"ok": True}
 
@@ -755,6 +766,8 @@ def api():
             "retry_queue": len(state.get("retries", {}) or {}),
             "feed": {"live": bool(cache.get("featured")), "synced_at": cache.get("ts"),
                      "fail_note": state.get("spark_fail_note", "")},
+            "sierra": {"configured": bool(os.environ.get("SIERRA_API_KEY")),
+                       "fail_note": state.get("sierra_fail_note", "")},
             "settings": _settings(),
         }
 
