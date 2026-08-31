@@ -163,27 +163,36 @@ def _cal_svc():
     return build("calendar", "v3", credentials=creds)
 
 
-def _cal_id():
+def _cal_id(demo: bool = False):
+    """Live calendar for real leads; the demo calendar for anything flagged
+    demo, so testing and pitch demos never touch the agent's real calendar."""
+    if demo:
+        return os.environ["CAL_ID"]
     return (state.get("settings", {}) or {}).get("cal_id") or os.environ["CAL_ID"]
 
 
-def _busy_windows(svc, start, end):
+def _is_demo(phone: str) -> bool:
+    return bool(state.get(f"lead:{phone}", {}).get("demo"))
+
+
+def _busy_windows(svc, start, end, demo=False):
     """Google freebusy for the working calendar; [] on failure (fail-open,
     the human confirms every tentative booking anyway)."""
+    cal = _cal_id(demo)
     try:
         fb = svc.freebusy().query(body={
             "timeMin": start.isoformat(), "timeMax": end.isoformat(),
-            "items": [{"id": _cal_id()}],
+            "items": [{"id": cal}],
         }).execute()
         from datetime import datetime
         return [(datetime.fromisoformat(b["start"].replace("Z", "+00:00")),
                  datetime.fromisoformat(b["end"].replace("Z", "+00:00")))
-                for b in fb["calendars"][_cal_id()].get("busy", [])]
+                for b in fb["calendars"][cal].get("busy", [])]
     except Exception:
         return []
 
 
-def _open_slots(day_dt, limit=3):
+def _open_slots(day_dt, limit=3, demo=False):
     """Free slots on day_dt: business hours ∩ calendar free, slot+buffer sized."""
     from datetime import datetime, timedelta
     from zoneinfo import ZoneInfo
@@ -197,7 +206,7 @@ def _open_slots(day_dt, limit=3):
         return []
     svc = _cal_svc()
     day_start = day_dt.replace(hour=0, minute=0, second=0, microsecond=0)
-    busy = _busy_windows(svc, day_start, day_start + timedelta(days=1))
+    busy = _busy_windows(svc, day_start, day_start + timedelta(days=1), demo)
     now = datetime.now(tz)
     out = []
     for w in windows:
@@ -317,7 +326,7 @@ def api():
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api", "rev": "v5-intel"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "v6-demo"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.
@@ -364,7 +373,8 @@ def api():
 
     # ── public: open phone-call slots for the site's booking picker ──────────
     @web.get("/slots")
-    def slots():
+    def slots(req: Request):
+        demo = req.query_params.get("demo") in ("1", "true", "yes")
         from datetime import datetime, timedelta
         from zoneinfo import ZoneInfo
         tz = ZoneInfo(TZ)
@@ -372,7 +382,7 @@ def api():
         base = datetime.now(tz)
         for d in range(0, 5):
             day = (base + timedelta(days=d)).replace(hour=12, minute=0, second=0, microsecond=0)
-            for slot in _open_slots(day, limit=4):
+            for slot in _open_slots(day, limit=4, demo=demo):
                 # ASCII only — non-ASCII here mojibakes through the Windows mount
                 out.append({"iso": slot.isoformat(),
                             "label": slot.strftime("%a %b %d, %I:%M %p").replace(", 0", ", ")})
@@ -380,7 +390,8 @@ def api():
                 break
         return {"slots": out[:8], "slot_min": _settings()["slot_min"]}
 
-    def _direct_book(name: str, phone: str, start_iso: str, lang: str, note: str):
+    def _direct_book(name: str, phone: str, start_iso: str, lang: str, note: str,
+                     demo: bool = False):
         """Site picked a slot -> event on the calendar, no instant call.
         Returns label on success, None if the slot is gone."""
         from datetime import datetime, timedelta
@@ -391,20 +402,23 @@ def api():
             if start.tzinfo is None:
                 start = start.replace(tzinfo=tz)
             day = start.replace(hour=12, minute=0)
-            if start not in _open_slots(day, limit=50):
+            if start not in _open_slots(day, limit=50, demo=demo):
                 return None
             s = _settings()
             svc = _cal_svc()
             lead = state.get(f"lead:{phone}", {})
-            body = _rich_event(name, phone, "consult", "", lead, "self-booked on the website")
+            body = _rich_event(name, phone, "consult", "", lead,
+                               "DEMO self-booking" if demo else "self-booked on the website")
             body["start"] = {"dateTime": start.isoformat(), "timeZone": TZ}
             body["end"] = {"dateTime": (start + timedelta(minutes=s["slot_min"])).isoformat(),
                            "timeZone": TZ}
-            svc.events().insert(calendarId=_cal_id(), body=body).execute()
+            svc.events().insert(calendarId=_cal_id(demo), body=body).execute()
             _bump_stat("booked")
             bookings = state.get("bookings", [])
             bookings.append({"ts": time.time(), "start": start.isoformat(), "name": name,
-                             "phone": phone, "purpose": "consult (site)", "property": ""})
+                             "phone": phone,
+                             "purpose": "DEMO consult" if demo else "consult (site)",
+                             "property": ""})
             state["bookings"] = bookings[-200:]
             return start.strftime("%A %b %d at %I:%M %p").replace(" 0", " ")
         except Exception:
@@ -429,6 +443,7 @@ def api():
         lang = "es" if str(body.get("language", "en")).lower().startswith("es") else "en"
         interest_key = str(body.get("interest", "other"))
         address = str(body.get("address", "")).strip()[:160]
+        demo = bool(body.get("demo"))
 
         # If they ran the site's value tool, carry the numbers onto the call so
         # Sofia opens already knowing them.
@@ -451,6 +466,7 @@ def api():
             "prequalified": str(body.get("prequalified", "")).strip()[:20],
             "own_rent": str(body.get("own_rent", "")).strip()[:20],
             "move_date": str(body.get("move_date", "")).strip()[:20],
+            "demo": demo,
             "ts": time.time(),
         }
 
@@ -477,21 +493,24 @@ def api():
         slot_iso = str(body.get("slot_iso", "")).strip()
         if slot_iso:
             label = _direct_book(name, phone, slot_iso, lang,
-                                 f"Wants: {interest_key}. Note: {lead_rec['message'][:150]}")
+                                 f"Wants: {interest_key}. Note: {lead_rec['message'][:150]}",
+                                 demo=demo)
             if label:
                 _bump_stat("leads")
                 if lang == "es":
                     _sms(phone, f"Confirmado: Ulises Ortega le llamará el {label} (hora de El Paso). Si necesita cambiarla, responda a este mensaje. Responda STOP para no ser contactado.")
                 else:
                     _sms(phone, f"Confirmed: Ulises Ortega will call you {label} (El Paso time). Reply here if you need to change it. Reply STOP to opt out.")
-                card = [f"🗓️ ULISES SITE BOOKING (no insta-call)", name, phone,
+                card = [("🧪 DEMO BOOKING (demo calendar)" if demo
+                         else "🗓️ ULISES SITE BOOKING (no insta-call)"), name, phone,
                         f"Phone call: {label}", f"Wants: {interest_key} · Lang: {lang.upper()}"]
-                try:
-                    import sierra_client
-                    if sierra_client.push_lead(lead_rec):
-                        card.append("→ pushed to Sierra CRM")
-                except Exception:
-                    pass
+                if not demo:
+                    try:
+                        import sierra_client
+                        if sierra_client.push_lead(lead_rec):
+                            card.append("→ pushed to Sierra CRM")
+                    except Exception:
+                        pass
                 _sms_owner("\n".join(card))
                 return JSONResponse({"ok": True, "scheduled": label})
             # slot vanished -> fall through to the instant call so no lead is lost
@@ -499,7 +518,8 @@ def api():
         _bump_stat("leads")
         _bump_stat("calls_placed")
 
-        card = [f"{LEVEL_EMOJI[_lead_level(lead_rec)]} — ULISES SITE", name, phone,
+        card = [(("🧪 DEMO — " if demo else "") +
+                 f"{LEVEL_EMOJI[_lead_level(lead_rec)]} — ULISES SITE"), name, phone,
                 f"Wants: {interest_key} · Lang: {lang.upper()}"]
         if address:
             card.append(f"Property: {address}")
@@ -815,30 +835,35 @@ def api():
                     in_hours = True
                     break
             if not in_hours:
-                alts = _open_slots(start, limit=2)
+                alts = _open_slots(start, limit=2, demo=_is_demo(phone))
                 alt = " or ".join(a.strftime("%I:%M %p").lstrip("0") for a in alts)
                 return {"result": f"That time is outside Ulises's hours that day. "
                                   f"{'Offer ' + alt + ' instead.' if alt else 'Ask for a different day.'}"}
 
             # conflict with his calendar (slot + buffer)?
+            demo = _is_demo(phone)
             svc = _cal_svc()
             pad_end = end + timedelta(minutes=s["buffer_min"])
             if any(b0 < pad_end and b1 > start
-                   for b0, b1 in _busy_windows(svc, start - timedelta(minutes=s["buffer_min"]), pad_end)):
-                alts = _open_slots(start, limit=2)
+                   for b0, b1 in _busy_windows(svc, start - timedelta(minutes=s["buffer_min"]),
+                                               pad_end, demo)):
+                alts = _open_slots(start, limit=2, demo=demo)
                 alt = " or ".join(a.strftime("%I:%M %p").lstrip("0") for a in alts)
                 return {"result": f"Ulises already has something at that time. "
                                   f"{'Offer ' + alt + ' instead.' if alt else 'Ask for another day.'}"}
 
             lead = state.get(f"lead:{phone}", {})
-            body = _rich_event(name, phone, purpose, prop, lead, "booked by Sofia on a call")
+            body = _rich_event(name, phone, purpose, prop, lead,
+                               "DEMO — booked by Sofia" if demo else "booked by Sofia on a call")
             body["start"] = {"dateTime": start.isoformat(), "timeZone": TZ}
             body["end"] = {"dateTime": end.isoformat(), "timeZone": TZ}
-            svc.events().insert(calendarId=_cal_id(), body=body).execute()
+            svc.events().insert(calendarId=_cal_id(demo), body=body).execute()
             _bump_stat("booked")
             bookings = state.get("bookings", [])
             bookings.append({"ts": time.time(), "start": start.isoformat(), "name": name,
-                             "phone": phone, "purpose": purpose, "property": prop})
+                             "phone": phone,
+                             "purpose": ("DEMO " + purpose) if demo else purpose,
+                             "property": prop})
             state["bookings"] = bookings[-200:]
             _sms_owner(f"📅 ULISES DEMO BOOKED\n{purpose} — {name} {phone}\n{start.strftime('%a %b %d %I:%M %p')} MT\n{prop or ''}\n(tentative — confirm with lead)")
             return {"result": f"Booked tentatively for {start.strftime('%A %B %d at %I:%M %p')}. Tell the caller Ulises will confirm shortly."}
@@ -853,6 +878,9 @@ def api():
         except Exception:
             body = {}
         args = body.get("args", body) or {}
+        call = body.get("call", {}) or {}
+        ph = (call.get("metadata") or {}).get("phone") or call.get("from_number") or ""
+        dm = _is_demo(ph)
         date_str = str(args.get("date") or "").strip()
         try:
             from datetime import datetime, timedelta
@@ -862,7 +890,7 @@ def api():
                 else datetime.now(tz)
             for d in range(0, 7):
                 day = (base + timedelta(days=d)).replace(hour=12, minute=0, second=0, microsecond=0)
-                slots = _open_slots(day, limit=3)
+                slots = _open_slots(day, limit=3, demo=dm)
                 if slots:
                     times = ", ".join(x.strftime("%I:%M %p").lstrip("0") for x in slots)
                     return {"result": f"Open on {slots[0].strftime('%A %B %d')}: {times} "

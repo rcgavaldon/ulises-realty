@@ -63,8 +63,8 @@
   .brand b{color:var(--gold-soft);font-weight:600}
   .brand-broker{display:flex;align-items:center;gap:6px;font-family:'Inter',sans-serif;
                 font-size:.66rem;letter-spacing:.16em;text-transform:uppercase;
-                color:var(--gold-soft);font-weight:600;margin-top:2px}
-  .brand-broker img{height:14px;width:auto;max-width:60px;object-fit:contain}
+                color:var(--gold-soft);font-weight:600;margin-top:4px}
+  .brand-broker img{height:17px;width:auto;object-fit:contain;opacity:.95}
   .nav-links{display:flex;gap:26px;align-items:center;font-size:.9rem}
   .nav-links a{opacity:.85;white-space:nowrap}.nav-links a:hover{opacity:1;color:var(--gold-soft)}
   .lang-btn{border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:4px 14px;background:none;color:#fff;cursor:pointer;font-size:.8rem;font-weight:600;letter-spacing:.05em}
@@ -92,7 +92,7 @@
   .portrait-badge .rl{font-size:.75rem;color:var(--gold-soft);letter-spacing:.14em;text-transform:uppercase}
   .brokerage{display:flex;align-items:center;gap:8px;margin-top:9px;padding-top:9px;
              border-top:1px solid rgba(255,255,255,.16);font-size:.76rem;color:#c7d0dd;letter-spacing:.03em}
-  .brokerage img{height:22px;width:auto;max-width:96px;object-fit:contain}
+  .brokerage img{height:26px;width:auto;object-fit:contain}
   .stat-bar{display:flex;gap:0;margin-top:46px;border-top:1px solid rgba(255,255,255,.14);padding-top:26px;flex-wrap:wrap}
   .stat{flex:1;min-width:120px}
   .stat b{display:block;font-family:'Playfair Display',serif;font-size:1.6rem;color:var(--gold-soft)}
@@ -307,8 +307,7 @@
     <a href="#" class="brand">
       <span class="brand-name">ULISES ORTEGA</span>
       <span class="brand-broker">
-        <img src="assets/brokerage-logo.png" alt="" onerror="this.remove()">
-        Clear View Realty
+        <img src="assets/brokerage-logo.png" alt="ClearView Realty" onerror="this.remove()">
       </span>
     </a>
     <div class="nav-links">
@@ -345,9 +344,7 @@
         <div class="nm">Ulises Ortega</div>
         <div class="rl" data-i18n="badge_role">REALTOR® · Se Habla Español</div>
         <div class="brokerage">
-          <!-- drop assets/brokerage-logo.png in and it appears automatically -->
-          <img src="assets/brokerage-logo.png" alt="Clear View Realty" onerror="this.remove()">
-          <span>Clear View Realty</span>
+          <img src="assets/brokerage-logo.png" alt="ClearView Realty" onerror="this.remove()">
         </div>
       </div>
     </div>
@@ -559,7 +556,7 @@
     <div>
       <div class="eyebrow" data-i18n="a_eyebrow">About Me</div>
       <h2 data-i18n="a_h2">Born in El Paso. Working for El Paso.</h2>
-      <p data-i18n="a_p1">I'm Ulises Ortega — a bilingual REALTOR® with Clear View Realty, serving El Paso and the surrounding area. I got into real estate for one reason: too many families here get rushed, ignored, or talked over during the biggest purchase of their lives. That doesn't happen on my watch.</p>
+      <p data-i18n="a_p1">I'm Ulises Ortega — a bilingual REALTOR® with ClearView Realty, serving El Paso and the surrounding area. I got into real estate for one reason: too many families here get rushed, ignored, or talked over during the biggest purchase of their lives. That doesn't happen on my watch.</p>
       <p data-i18n="a_p2">Whether you're PCSing to Fort Bliss, buying your first home on the East Side, or selling in the Upper Valley — you get straight answers, real availability, and someone who negotiates like it's his own money on the table.</p>
       <div class="chip-row">
         <span class="chip" data-i18n="chip1">🇺🇸🇲🇽 Bilingual EN/ES</span>
@@ -670,7 +667,8 @@
     <div class="foot-grid">
       <div>
         <h5>ULISES ORTEGA · <span data-i18n="ft_brand">EL PASO REAL ESTATE</span></h5>
-        <p data-i18n="ft_blurb">Ulises Ortega — bilingual REALTOR® serving El Paso, Horizon City, Socorro, Canutillo &amp; Fort Bliss. Sponsored by Clear View Realty — TREC License #855823.</p>
+        <img src="assets/brokerage-logo.png" alt="ClearView Realty" onerror="this.remove()" style="height:30px;width:auto;margin:4px 0 12px;opacity:.9">
+        <p data-i18n="ft_blurb">Ulises Ortega — bilingual REALTOR® serving El Paso, Horizon City, Socorro, Canutillo &amp; Fort Bliss. Sponsored by ClearView Realty — TREC License #855823.</p>
         <p style="margin-top:10px" class="demo-tag" data-i18n="ft_demo">Preview listings and example testimonials shown while the live MLS connection is completed.</p>
         <p style="margin-top:8px"><b style="color:#c9d6e4">📞 (505) 520-2840</b> — <span data-i18n="ft_phone">answered day &amp; night by Sofia, my AI assistant</span></p>
       </div>
@@ -706,6 +704,10 @@
 <script>
 // ── CONFIG ───────────────────────────────────────────────────────────────────
 // Set after the Modal endpoint is deployed. Empty = demo mode (no call fired).
+// DEMO MODE: add ?demo=1 to the URL. Same site, but every booking goes to the
+// demo calendar instead of the agent's real one, and nothing reaches his CRM.
+// Use this for testing and for pitching in front of a room.
+const DEMO = new URLSearchParams(location.search).has("demo");
 const API_BASE = "https://roberto-gavaldon3--ulises-realty-api-api.modal.run";
 const LEAD_ENDPOINT  = API_BASE + "/lead";
 const VALUE_ENDPOINT = API_BASE + "/value";
@@ -803,7 +805,7 @@ const I18N = {
     fl_submit:"Recibir Mi Llamada en 60 Segundos →", fl_note:"⚡ Sofía, mi asistente de IA, te llamará de inmediato.",
     ok_h:"¡Tu teléfono está por sonar!", ok_p:"Sofía te está llamando ahora del <b>(505) 520-2840</b> — es mi línea, guárdala. Dile qué buscas y yo tendré todo antes de que hablemos.",
     ft_brand:"BIENES RAÍCES EL PASO",
-    ft_blurb:"Ulises Ortega — REALTOR® bilingüe sirviendo El Paso, Horizon City, Socorro, Canutillo y Fort Bliss. Patrocinado por Clear View Realty — Licencia TREC #855823.",
+    ft_blurb:"Ulises Ortega — REALTOR® bilingüe sirviendo El Paso, Horizon City, Socorro, Canutillo y Fort Bliss. Patrocinado por ClearView Realty — Licencia TREC #855823.",
     ft_demo:"Listados de vista previa y testimonios de ejemplo mientras se completa la conexión al MLS en vivo.",
     ft_explore:"EXPLORAR", ft_legal:"AVISOS REQUERIDOS", ft_privacy:"Privacidad y Consentimiento", ft_eho:"Igualdad de Oportunidades de Vivienda · REALTOR®"
   }
@@ -972,7 +974,8 @@ async function runValue(e){
         email: f.vemail.value.trim(), interest: "value", language: LANG,
         address: LAST_ADDRESS, valuation: d,
         message: "Ran the home value tool for " + LAST_ADDRESS,
-        consent: f.vconsent.checked, source: "ulises-realty-value-tool"
+        consent: f.vconsent.checked, demo: DEMO,
+        source: DEMO ? "ulises-realty-value-tool-DEMO" : "ulises-realty-value-tool"
       })
     }).catch(()=>{});
   }catch(err){
@@ -1027,7 +1030,7 @@ function onIntent(v){
 // Slots are prefetched at page load so the picker opens instantly.
 let SLOTS_LOADED = false, SLOTS_PROMISE = null;
 function prefetchSlots(){
-  SLOTS_PROMISE = fetch(API_BASE + "/slots").then(r=>r.json()).then(d=>{
+  SLOTS_PROMISE = fetch(API_BASE + "/slots" + (DEMO?"?demo=1":"")).then(r=>r.json()).then(d=>{
     const s = document.getElementById("slotSel");
     if((d.slots||[]).length){
       s.innerHTML = d.slots.map(x=>`<option value="${x.iso}">${x.label}</option>`).join("");
@@ -1073,7 +1076,8 @@ async function submitLead(e){
     message: f.message.value.trim(),
     consent: f.consent.checked,
     slot_iso: (f.calltime.value === "pick" && f.slot_iso.value) ? f.slot_iso.value : "",
-    source: "ulises-realty-demo"
+    demo: DEMO,
+    source: DEMO ? "ulises-realty-DEMO" : "ulises-realty-site"
   };
   let scheduled = "";
   if(LEAD_ENDPOINT){
@@ -1097,6 +1101,13 @@ async function submitLead(e){
   return false;
 }
 
+if(DEMO){
+  const b = document.createElement("div");
+  b.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:99;background:#b3402e;color:#fff;"
+    + "text-align:center;padding:7px 12px;font-size:.78rem;font-weight:700;letter-spacing:.08em";
+  b.textContent = "🧪 DEMO MODE — bookings go to the demo calendar, not Ulises's";
+  document.body.appendChild(b);
+}
 applyLang();
 prefetchSlots();
 onIntent(document.querySelector('#leadForm select[name="interest"]').value);
