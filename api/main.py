@@ -621,6 +621,46 @@ def api():
         return {"first": winners[0], "second": winners[1], "total": len(entries),
                 "texted": texted}
 
+    # ── inbound SMS: honor STOP, forward everything else ─────────────────────
+    # Every text we send says "Reply STOP" — this is what makes that true.
+    # Point the Telnyx messaging profile's inbound webhook at this URL.
+    STOP_WORDS = {"stop", "stopall", "unsubscribe", "cancel", "end", "quit", "revoke",
+                  "alto", "parar", "cancelar", "baja"}
+    START_WORDS = {"start", "unstop", "yes", "si", "sí"}
+
+    @web.post("/telnyx-sms")
+    async def telnyx_sms(req: Request):
+        try:
+            body = await req.json()
+        except Exception:
+            return {"ok": True}
+        payload = (body.get("data") or {}).get("payload") or {}
+        if payload.get("direction") != "inbound":
+            return {"ok": True}
+        frm = (payload.get("from") or {}).get("phone_number") or ""
+        text = (payload.get("text") or "").strip()
+        word = text.lower().strip(" .!,").split()[0] if text else ""
+
+        if word in STOP_WORDS:
+            state[f"optout:{frm}"] = True
+            retries = state.get("retries", {})
+            if retries.pop(frm, None) is not None:
+                state["retries"] = retries
+            _sms(frm, "You're unsubscribed and won't be contacted again. "
+                      "Reply START if you ever change your mind.")
+            _sms_owner(f"🚫 OPT-OUT honored: {frm}")
+            return {"ok": True, "optout": True}
+
+        if word in START_WORDS and state.get(f"optout:{frm}", False):
+            state[f"optout:{frm}"] = False
+            _sms(frm, "You're re-subscribed. Reply STOP anytime.")
+            return {"ok": True, "optin": True}
+
+        lead = state.get(f"lead:{frm}", {})
+        who = lead.get("name") or "unknown"
+        _sms_owner(f"💬 TEXT from {who} {frm}:\n{text[:300]}")
+        return {"ok": True}
+
     # ── Retell webhook ───────────────────────────────────────────────────────
     @web.post("/retell-webhook")
     async def retell_webhook(req: Request):

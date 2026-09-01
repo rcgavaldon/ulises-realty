@@ -83,6 +83,16 @@
   </div>
 
   <div class="card scroll" style="margin-top:18px">
+    <h2>Pitch-Day Drawing <span id="raffleCount" style="text-transform:none;letter-spacing:0;color:var(--muted)"></span></h2>
+    <div id="raffleWinners" style="margin-bottom:10px"></div>
+    <table><thead><tr><th>When</th><th>Name</th><th>Phone</th><th>Email</th><th>Brokerage</th><th>Biggest time-waster</th></tr></thead><tbody id="raffle"></tbody></table>
+    <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <button style="margin:0" onclick="copyRaffle()">Copy all as CSV</button>
+      <span id="copiedMsg" class="saved"></span>
+    </div>
+  </div>
+
+  <div class="card scroll" style="margin-top:18px">
     <h2>Recent Leads</h2>
     <table><thead><tr><th>Level</th><th>When</th><th>Name</th><th>Phone</th><th>Wants</th><th>Pre-qual</th><th>Now</th><th>Move</th><th>Property</th></tr></thead><tbody id="leads"></tbody></table>
   </div>
@@ -124,6 +134,7 @@ function esc(s){ const d=document.createElement("div"); d.textContent=s??""; ret
 function fmtTs(t){ return t? new Date(t*1000).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}) : "—"; }
 
 async function load(){
+  loadRaffle();
   const d = await api("/admin/overview");
   const w = d.week||{};
   document.getElementById("stats").innerHTML = [
@@ -167,6 +178,27 @@ async function load(){
   document.getElementById("bookings").innerHTML = (d.bookings||[]).map(b=>
     `<tr><td>${esc((b.start||"").replace("T"," ").slice(0,16))}</td><td>${esc(b.name)}</td><td>${esc(b.phone)}</td><td><span class="tag">${esc(b.purpose)}</span></td><td>${esc(b.property)||"—"}</td></tr>`
   ).join("") || `<tr><td colspan="5" style="color:var(--muted)">Nothing booked yet.</td></tr>`;
+}
+
+let RAFFLE = [];
+async function loadRaffle(){
+  try{
+    const d = await api("/admin/raffle");
+    RAFFLE = d.entries || [];
+  }catch(e){ return; }
+  document.getElementById("raffleCount").textContent =
+    RAFFLE.length ? ` — ${RAFFLE.length} entered` : " — no entries yet";
+  document.getElementById("raffle").innerHTML = RAFFLE.map(e=>
+    `<tr><td>${fmtTs(e.ts)}</td><td>${esc(e.name)}</td><td>${esc(e.phone)}</td><td>${esc(e.email)||"—"}</td><td>${esc(e.brokerage)||"—"}</td><td>${esc(e.pain)||"—"}</td></tr>`
+  ).join("") || `<tr><td colspan="6" style="color:var(--muted)">Nothing yet — entries appear here the moment people scan.</td></tr>`;
+}
+function copyRaffle(){
+  const csv = "Name,Phone,Email,Brokerage,Pain\n" + RAFFLE.map(e=>
+    [e.name,e.phone,e.email,e.brokerage,e.pain].map(v=>`"${(v||"").replace(/"/g,'""')}"`).join(",")
+  ).join("\n");
+  navigator.clipboard.writeText(csv).then(()=>{
+    const m=document.getElementById("copiedMsg"); m.textContent="✓ copied"; setTimeout(()=>m.textContent="",2500);
+  });
 }
 
 async function saveSettings(){
