@@ -259,6 +259,23 @@ def _during_hours() -> bool:
     return False
 
 
+def _add_to_cal_link(title, start, minutes=20, details=""):
+    """Google 'add to calendar' link — works on any phone, unlike attendee
+    invites, which a service account can't send without Workspace delegation."""
+    from datetime import timedelta
+    from urllib.parse import quote_plus
+    fmt = "%Y%m%dT%H%M%SZ"
+    try:
+        s = start.astimezone(__import__("datetime").timezone.utc)
+    except Exception:
+        return ""
+    e = s + timedelta(minutes=minutes)
+    return ("https://calendar.google.com/calendar/render?action=TEMPLATE"
+            f"&text={quote_plus(title)}"
+            f"&dates={s.strftime(fmt)}/{e.strftime(fmt)}"
+            f"&details={quote_plus(details[:300])}")
+
+
 def _rich_event(name, phone, purpose, prop, lead, source):
     """Calendar event body Ulises can act on at a glance — not a dry title."""
     lead = lead or {}
@@ -326,7 +343,7 @@ def api():
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api", "rev": "v6-demo"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "v7-sms-cal"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.
@@ -497,10 +514,22 @@ def api():
                                  demo=demo)
             if label:
                 _bump_stat("leads")
+                from datetime import datetime as _dt
+                from zoneinfo import ZoneInfo as _Z
+                _st = _dt.fromisoformat(slot_iso)
+                if _st.tzinfo is None:
+                    _st = _st.replace(tzinfo=_Z(TZ))
+                _link = _add_to_cal_link(
+                    "Call with Ulises Ortega", _st, _settings()["slot_min"],
+                    "Ulises Ortega, ClearView Realty. Questions? Call or text (505) 520-2840.")
                 if lang == "es":
-                    _sms(phone, f"Confirmado: Ulises Ortega le llamará el {label} (hora de El Paso). Si necesita cambiarla, responda a este mensaje. Responda STOP para no ser contactado.")
+                    _sms(phone, f"Confirmado: Ulises Ortega le llamara el {label} (hora de El Paso).\n"
+                                f"Agregar a su calendario: {_link}\n"
+                                "Responda a este mensaje para cambiarla. STOP para no ser contactado.")
                 else:
-                    _sms(phone, f"Confirmed: Ulises Ortega will call you {label} (El Paso time). Reply here if you need to change it. Reply STOP to opt out.")
+                    _sms(phone, f"Confirmed: Ulises Ortega will call you {label} (El Paso time).\n"
+                                f"Add to your calendar: {_link}\n"
+                                "Reply here to change it. Reply STOP to opt out.")
                 card = [("🧪 DEMO BOOKING (demo calendar)" if demo
                          else "🗓️ ULISES SITE BOOKING (no insta-call)"), name, phone,
                         f"Phone call: {label}", f"Wants: {interest_key} · Lang: {lang.upper()}"]
