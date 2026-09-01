@@ -542,6 +542,62 @@ def api():
         _sms_owner("\n".join(card))
         return JSONResponse({"ok": True, "call": call_status})
 
+    # ── pitch-day drawing entries (QR on the last slide) ─────────────────────
+    @web.post("/raffle")
+    async def raffle(req: Request):
+        try:
+            body = await req.json()
+        except Exception:
+            return JSONResponse({"error": "bad json"}, status_code=400)
+        name = str(body.get("name", "")).strip()[:80]
+        phone = norm_phone(str(body.get("phone", "")))
+        if not name or not phone:
+            return JSONResponse({"error": "name and valid US phone required"}, status_code=400)
+        entry = {
+            "name": name, "phone": phone,
+            "email": str(body.get("email", "")).strip()[:120],
+            "brokerage": str(body.get("brokerage", "")).strip()[:80],
+            "pain": str(body.get("pain", "")).strip()[:200],
+            "consent": bool(body.get("consent")),
+            "ts": time.time(),
+        }
+        entries = state.get("raffle", [])
+        entries = [e for e in entries if e["phone"] != phone]  # one entry per phone
+        entries.append(entry)
+        state["raffle"] = entries[-500:]
+        _sms_owner(f"🎟️ ENTRY #{len(entries)} — {name} · {phone}"
+                   f"{' · ' + entry['brokerage'] if entry['brokerage'] else ''}"
+                   f"{chr(10) + 'Pain: ' + entry['pain'][:80] if entry['pain'] else ''}")
+        return JSONResponse({"ok": True, "count": len(entries)})
+
+    @web.get("/admin/raffle")
+    def admin_raffle(req: Request):
+        if req.headers.get("x-admin-token") != os.environ.get("CRON_TOKEN"):
+            return JSONResponse({"error": "forbidden"}, status_code=403)
+        return {"entries": (state.get("raffle", []) or [])[::-1]}
+
+    @web.post("/admin/raffle/draw")
+    def admin_raffle_draw(req: Request):
+        """Deterministic public draw: seeded by entry count so it's reproducible
+        and auditable if anyone in the room asks how winners were picked."""
+        if req.headers.get("x-admin-token") != os.environ.get("CRON_TOKEN"):
+            return JSONResponse({"error": "forbidden"}, status_code=403)
+        import hashlib
+        entries = state.get("raffle", []) or []
+        if len(entries) < 2:
+            return {"error": "need at least 2 entries"}
+        seed = hashlib.sha256(
+            ("|".join(e["phone"] for e in entries)).encode()).hexdigest()
+        order = sorted(range(len(entries)),
+                       key=lambda i: hashlib.sha256(
+                           (seed + str(i)).encode()).hexdigest())
+        winners = [entries[order[0]], entries[order[1]]]
+        state["raffle_winners"] = winners
+        _sms_owner("🏆 DRAWING RESULT\n"
+                   f"1st (3 months): {winners[0]['name']} {winners[0]['phone']}\n"
+                   f"2nd (1 month): {winners[1]['name']} {winners[1]['phone']}")
+        return {"first": winners[0], "second": winners[1], "total": len(entries)}
+
     # ── Retell webhook ───────────────────────────────────────────────────────
     @web.post("/retell-webhook")
     async def retell_webhook(req: Request):

@@ -1,0 +1,304 @@
+<title>ClearView Pitch Deck</title>
+<style>
+  :root{
+    --navy:#0b1521; --navy2:#132437; --gold:#c9a227; --gold-soft:#f0d97a;
+    --hot:#e0543a; --ink:#f5f2ea; --muted:#93a3b8; --ok:#3ec98a;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;overflow:hidden}
+  body{background:var(--navy);color:var(--ink);
+       font-family:'Inter',system-ui,-apple-system,sans-serif;
+       display:flex;align-items:center;justify-content:center;cursor:pointer;user-select:none}
+  .stage{width:100%;height:100%;position:relative;display:flex;align-items:center;justify-content:center}
+  .slide{display:none;width:100%;max-width:1100px;padding:5vh 6vw;text-align:center;
+         animation:in .28s ease both}
+  .slide.on{display:block}
+  @keyframes in{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+
+  h1{font-size:clamp(2.4rem,7.5vw,6rem);font-weight:800;line-height:1.02;letter-spacing:-.02em}
+  h2{font-size:clamp(1.8rem,5vw,3.6rem);font-weight:800;line-height:1.1;letter-spacing:-.01em}
+  h3{font-size:clamp(1.2rem,2.6vw,2rem);font-weight:700;line-height:1.25}
+  p.big{font-size:clamp(1.3rem,3.2vw,2.4rem);font-weight:600;line-height:1.35;color:var(--muted)}
+  .gold{color:var(--gold-soft)} .hot{color:var(--hot)} .ok{color:var(--ok)}
+  .kicker{font-size:clamp(.7rem,1.4vw,1rem);letter-spacing:.3em;text-transform:uppercase;
+          color:var(--gold);font-weight:800;margin-bottom:2.5vh}
+  .huge{font-size:clamp(4rem,17vw,15rem);font-weight:800;line-height:.92;letter-spacing:-.04em}
+  .strike{text-decoration:line-through;text-decoration-thickness:.08em;opacity:.45}
+  .sub{font-size:clamp(1rem,2vw,1.5rem);color:var(--muted);margin-top:3vh;font-weight:500}
+  .hand{font-size:clamp(2rem,6vw,4.5rem)}
+
+  .stack{display:inline-flex;flex-direction:column;gap:1.6vh;margin-top:4vh;text-align:left}
+  .row{display:flex;justify-content:space-between;gap:4vw;align-items:baseline;
+       font-size:clamp(.95rem,2.1vw,1.6rem);border-bottom:1px dashed rgba(255,255,255,.18);
+       padding-bottom:1.1vh;min-width:min(78vw,760px)}
+  .row b{color:var(--gold-soft);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .row.total{border-bottom:none;font-size:clamp(1.2rem,3vw,2.3rem);font-weight:800;padding-top:1vh}
+
+  .card{background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.14);
+        border-radius:16px;padding:3.5vh 3vw;display:inline-block;margin-top:3vh}
+  .prizes{display:flex;flex-direction:column;gap:1.6vh;margin-top:4vh;align-items:center}
+  .prize{font-size:clamp(1.1rem,2.6vw,2rem);font-weight:700}
+
+  .qr{background:#fff;padding:18px;border-radius:18px;display:inline-block;margin-top:3vh;
+      box-shadow:0 24px 60px rgba(0,0,0,.5)}
+  .qr img{display:block;width:min(38vh,320px);height:auto;image-rendering:pixelated}
+
+  /* chrome */
+  .bar{position:fixed;left:0;bottom:0;height:4px;background:var(--gold);width:0;
+       transition:width .25s ease;z-index:5}
+  .meta{position:fixed;bottom:14px;right:18px;font-size:.72rem;color:#4a5a6e;
+        letter-spacing:.12em;font-weight:700;z-index:5}
+  .clock{position:fixed;bottom:14px;left:18px;font-size:.72rem;color:#4a5a6e;
+         letter-spacing:.12em;font-weight:700;z-index:5;font-variant-numeric:tabular-nums}
+  .clock.run{color:var(--gold)}
+  .notes{position:fixed;left:0;right:0;bottom:0;background:rgba(0,0,0,.9);
+         border-top:2px solid var(--gold);padding:18px 24px 26px;text-align:left;
+         font-size:1rem;line-height:1.5;display:none;z-index:6;max-height:42vh;overflow:auto}
+  .notes.on{display:block}
+  .notes b{color:var(--gold-soft)}
+  .notes .say{color:#fff;font-size:1.05rem}
+  .notes .do{color:var(--ok);margin-top:8px;display:block}
+  .help{position:fixed;top:14px;right:18px;font-size:.7rem;color:#3d4d61;letter-spacing:.1em;z-index:5}
+  .beat{position:fixed;top:14px;left:18px;font-size:.7rem;color:var(--gold);letter-spacing:.18em;
+        font-weight:800;z-index:5;text-transform:uppercase}
+</style>
+
+<div class="stage" id="stage"></div>
+<div class="bar" id="bar"></div>
+<div class="beat" id="beat"></div>
+<div class="clock" id="clock">SPACE = timer</div>
+<div class="meta" id="meta"></div>
+<div class="help">← → move · N notes · F full · T timer</div>
+<div class="notes" id="notes"></div>
+
+<script>
+/* ── THE DECK ──────────────────────────────────────────────────────────────
+   One idea per slide, Hormozi-style: fast clip, big type, no bullet soup.
+   `n` = what to SAY / DO. Press N to show notes on your laptop.
+   Structure: HOOK → AGITATE → DEMO → STACK → PRICE → GUARANTEE → SCARCITY
+              → DRAWING → CLOSE
+   ───────────────────────────────────────────────────────────────────────── */
+const D = [
+// ── OPEN ──────────────────────────────────────────────────────────────────
+{b:"OPEN", h:`<h1>I'm not here to<br>sell you <span class="gold">software</span>.</h1>`,
+ n:`<span class="say">"I'm not here to sell you software. I'm here to show you the money you're already losing — and then show you how to stop it. Takes 12 minutes."</span><span class="do">DO: Say it standing still. No slides moving yet. Let it land.</span>`},
+
+{b:"OPEN", h:`<div class="kicker">Robert Gavaldon · RG Automations</div><h2>I build the AI that<br>answers your phone.</h2><p class="sub">Ulises has been running it for weeks. Ask him after.</p>`,
+ n:`<span class="say">"I'm Robert. I build AI phone assistants. Ulises is my friend and he's been running one — that's why I'm standing here."</span><span class="do">DO: Point at Ulises. 5 seconds. Move.</span>`},
+
+// ── HANDS UP ──────────────────────────────────────────────────────────────
+{b:"HANDS UP", h:`<h1>Hands up.</h1><p class="big" style="margin-top:4vh">Who here wants to<br><span class="gold">make more money</span> this year?</p>`,
+ n:`<span class="say">"Hands up — who wants to make more money this year?"</span><span class="do">DO: Raise YOUR hand first. Wait for the room. Everyone's hand goes up.</span>`},
+
+{b:"HANDS UP", h:`<h2>Keep it up if you've<br>ever lost a lead because<br><span class="hot">you couldn't pick up</span>.</h2>`,
+ n:`<span class="say">"Keep it up if you've ever lost a deal because you were in a showing, or driving, or asleep."</span><span class="do">DO: Nobody drops. Say "nobody put their hand down. Interesting."</span>`},
+
+{b:"HANDS UP", h:`<h2>Keep it up if you<br><span class="hot">hate</span> typing leads into<br>Flexmls at 9pm.</h2>`,
+ n:`<span class="say">"Keep it up if you hate entering everything into Flexmls at nine at night."</span><span class="do">DO: Laugh with them. This is the bonding moment.</span>`},
+
+{b:"HANDS UP", h:`<h2>Keep it up if a lead<br>has ever gone with<br><span class="hot">whoever called first</span>.</h2>`,
+ n:`<span class="say">"Keep it up if you've lost one to another agent — not because they were better, but because they called first."</span><span class="do">DO: Pause. Look around the room. THIS is the pain.</span>`},
+
+{b:"HANDS UP", h:`<h1 class="gold">Put your hands down.</h1><p class="big" style="margin-top:4vh">That's the whole problem.</p>`,
+ n:`<span class="say">"Put 'em down. That's it. That's the whole problem, and it's not a you problem — it's a physics problem. You can't be in two places."</span>`},
+
+// ── AGITATE / MATH ────────────────────────────────────────────────────────
+{b:"THE MATH", h:`<div class="kicker">Here's what it costs</div><h2>A lead who waits<br><span class="hot">5 minutes</span><br>is a lead you lost.</h2>`,
+ n:`<span class="say">"Speed to lead is the most studied number in our business. After five minutes, your odds fall off a cliff. After thirty, it's basically over."</span>`},
+
+{b:"THE MATH", h:`<p class="big">You're not competing on</p><h1>service.</h1><p class="big" style="margin-top:3vh">You're competing on <span class="gold">who rings first.</span></p>`,
+ n:`<span class="say">"You're not losing on service. You're the best agents in this city. You're losing on who rings first."</span>`},
+
+{b:"THE MATH", h:`<div class="kicker">Do this math with me</div><h2>One extra closing<br>a year at El Paso median<br>is about <span class="gold">$7,000</span> to you.</h2>`,
+ n:`<span class="say">"One extra deal a year. Median El Paso home, three percent, your split — call it seven grand. Just ONE."</span><span class="do">DO: Say "if you think that number's wrong, use your own. It still works."</span>`},
+
+{b:"THE MATH", h:`<h2>Hold that number.<br>I'm coming back to it.</h2>`,
+ n:`<span class="say">"Hold that number. I'm coming back to it."</span><span class="do">DO: Move fast here. Don't sell yet.</span>`},
+
+// ── THE TURN ──────────────────────────────────────────────────────────────
+{b:"THE TURN", h:`<h1>So I built<br><span class="gold">Sofia</span>.</h1>`,
+ n:`<span class="say">"So I built Sofia."</span><span class="do">DO: One beat. That's the whole slide.</span>`},
+
+{b:"THE TURN", h:`<h2>She answers your phone.<br>Day, night, weekends.<br><span class="gold">In English or Spanish.</span></h2>`,
+ n:`<span class="say">"She answers your line — day, night, weekends, English or Spanish, and she tells people she's an AI assistant. No tricks."</span>`},
+
+{b:"THE TURN", h:`<h2>Somebody fills out<br>your website form —<br>their phone rings in<br><span class="gold">60 seconds</span>.</h2>`,
+ n:`<span class="say">"Somebody hits your website at 11pm — their phone rings in sixty seconds. While they're still on your site."</span>`},
+
+{b:"THE TURN", h:`<h2>She books them<br>straight onto<br><span class="gold">your calendar</span>.</h2><p class="sub">Only in your hours. Never double-books you.</p>`,
+ n:`<span class="say">"She books them onto your actual calendar — only inside hours you set, and she checks your calendar so she never double-books you."</span>`},
+
+{b:"THE TURN", h:`<h2>And if you're free<br>right now, she<br><span class="gold">patches them to you live</span>.</h2>`,
+ n:`<span class="say">"And if it's a hot lead during your hours — she calls YOU, tells you who's on the line and what they want, then connects you."</span><span class="do">DO: This is the setup for the demo. Slow down here.</span>`},
+
+// ── DEMO ──────────────────────────────────────────────────────────────────
+{b:"DEMO", h:`<h1>Don't take my<br>word for it.</h1>`,
+ n:`<span class="say">"Don't take my word for it."</span>`},
+
+{b:"DEMO", h:`<h1 class="gold">Let's do it<br>right now.</h1>`,
+ n:`<span class="say">"Let's do it right now. Somebody give me a name."</span><span class="do">DO: Get a volunteer from the ROOM. Their name makes it real.</span>`},
+
+{b:"DEMO", h:`<div class="kicker">Live · Ulises's actual website</div><h2>I'm filling out<br>the form as a buyer<br>right now.</h2><p class="sub">Watch the clock.</p>`,
+ n:`<span class="say">"This is Ulises's real site. I'm putting in a name, a number, and I'm marking it as somebody ready to move — a hot lead. Watch the clock."</span><span class="do">DO: Fill it live on the projector. Say each field OUT LOUD as you type. Then STOP TALKING and let the phone ring.</span>`},
+
+{b:"DEMO", h:`<div class="huge gold" id="demoTimer">00</div><p class="big">seconds</p>`,
+ n:`<span class="say">Say nothing. Let the silence work.</span><span class="do">DO: Press T to start the counter. When the phone rings, put it on speaker and hold it to the mic. Let Sofia talk. Ask her for a showing time. Ask to speak to Ulises. Let her patch it.</span>`},
+
+{b:"DEMO", h:`<h2>That's what your<br>lead just experienced<br>at <span class="gold">11 o'clock at night</span>.</h2>`,
+ n:`<span class="say">"That's what happens while you're asleep. She'd have done that at 11pm on a Sunday."</span>`},
+
+{b:"DEMO", h:`<h2>And it's already<br>on the calendar.<br>With <span class="gold">everything they told her</span>.</h2>`,
+ n:`<span class="say">"And look — it's already on the calendar. Their budget, their timeline, whether they're pre-qualified, the address they asked about."</span><span class="do">DO: Show the calendar event on screen. The detail is the wow.</span>`},
+
+// ── STACK ─────────────────────────────────────────────────────────────────
+{b:"WHAT YOU GET", h:`<h1>So what<br>do you get?</h1>`,
+ n:`<span class="say">"So what do you actually get?"</span>`},
+
+{b:"WHAT YOU GET", h:`<div class="kicker">Everything included</div>
+<div class="stack">
+  <div class="row"><span>Your own website, built for you</span><b>$2,500</b></div>
+  <div class="row"><span>Sofia answering 24/7, EN + ES</span><b>$1,200/mo</b></div>
+  <div class="row"><span>60-second callback on every lead</span><b>included</b></div>
+  <div class="row"><span>Books straight to your calendar</span><b>included</b></div>
+  <div class="row"><span>Live patch-through when you're free</span><b>included</b></div>
+</div>`,
+ n:`<span class="say">Read each line fast. Don't linger.</span><span class="do">DO: These are honest market comparables — a custom realtor site really is $2-3k, and Ylopo-class voice AI is $895-2,000/mo.</span>`},
+
+{b:"WHAT YOU GET", h:`<div class="kicker">Keeps going</div>
+<div class="stack">
+  <div class="row"><span>Texts + redials leads who don't answer</span><b>included</b></div>
+  <div class="row"><span>Home value + property tax tool</span><b>$99/mo</b></div>
+  <div class="row"><span>Your listings + hot sheet on the site</span><b>included</b></div>
+  <div class="row"><span>Lead scored hot / warm / cold</span><b>included</b></div>
+  <div class="row"><span>Weekly numbers texted to you</span><b>included</b></div>
+</div>`,
+ n:`<span class="say">"She doesn't quit either — no answer, she texts them, then calls back at five minutes, an hour, next morning."</span>`},
+
+{b:"WHAT YOU GET", h:`<div class="stack">
+  <div class="row total"><span>Real market value</span><b>$1,300+/mo</b></div>
+</div><p class="sub">That's what this costs from anybody else.</p>`,
+ n:`<span class="say">"Everywhere else, that's thirteen hundred a month and up. Ylopo, Sierra, CINC — go price them."</span><span class="do">DO: Invite them to check. Confidence closes.</span>`},
+
+// ── PRICE ─────────────────────────────────────────────────────────────────
+{b:"PRICE", h:`<h2>I'm one guy<br>in El Paso.<br><span class="gold">I don't have their overhead.</span></h2>`,
+ n:`<span class="say">"I'm one guy in El Paso. No sales team, no office, no investors to feed."</span>`},
+
+{b:"PRICE", h:`<div class="kicker">Setup</div><div class="huge strike">$499</div><h2 class="gold" style="margin-top:2vh">Waived if you start this week.</h2>`,
+ n:`<span class="say">"Setup is four ninety-nine. If you start this week — it's waived. Not discounted. Gone."</span>`},
+
+{b:"PRICE", h:`<div class="kicker">Then</div><div class="huge">$499</div><h2>a month. Everything.</h2><p class="sub">No per-lead fees. No credits. No contract.</p>`,
+ n:`<span class="say">"Then it's four ninety-nine a month. No per-lead charges, no credit packs, no annual contract."</span>`},
+
+{b:"PRICE", h:`<h2>Remember that<br><span class="gold">$7,000</span> deal?</h2><p class="big" style="margin-top:3vh">One a year pays for this<br>and hands you <span class="gold">$1,000 back</span>.</p>`,
+ n:`<span class="say">"Remember the seven grand? Sofia has to save you ONE deal a year to pay for herself — and you pocket a thousand on top. One. Deal."</span><span class="do">DO: This is the logical close. Let it sit for two full seconds.</span>`},
+
+{b:"PRICE", h:`<h2>Pay for the year up front:<br><span class="gold">two months free</span><br>and your price never moves.</h2>`,
+ n:`<span class="say">"Want the year up front? Two months free, and your rate is locked for life — I never raise it on you."</span>`},
+
+// ── GUARANTEE ─────────────────────────────────────────────────────────────
+{b:"GUARANTEE", h:`<h1>And I'll take<br>the risk<br><span class="gold">off you.</span></h1>`,
+ n:`<span class="say">"And I'll carry the risk, not you."</span>`},
+
+{b:"GUARANTEE", h:`<div class="card"><h2>If Sofia doesn't book you<br><span class="gold">at least 5 appointments</span><br>in your first 90 days —</h2><h2 class="ok" style="margin-top:3vh">I work free until she does.</h2></div>`,
+ n:`<span class="say">"If she doesn't book you five appointments in ninety days, I don't charge you again until she does. I eat it."</span><span class="do">DO: Decide BEFORE you walk in whether you'll honor this. If you say it, you own it.</span>`},
+
+{b:"GUARANTEE", h:`<h2>Cancel any month.<br>Keep your website.<br><span class="gold">No exit fee, ever.</span></h2>`,
+ n:`<span class="say">"Cancel whenever. Keep the website — it's yours. No exit fee, no games."</span>`},
+
+// ── SCARCITY ──────────────────────────────────────────────────────────────
+{b:"THE CATCH", h:`<h1>There's one catch.</h1>`,
+ n:`<span class="say">"There's one catch, and it's a real one."</span>`},
+
+{b:"THE CATCH", h:`<div class="huge gold">5</div><h2>That's how many I can<br>set up this month.</h2><p class="sub">I build every one of these myself.</p>`,
+ n:`<span class="say">"I can take five this month. Not a marketing number — I build every one of these personally, and there are seventy of you in this room."</span><span class="do">DO: TRUE constraint. Say it plainly, no apology.</span>`},
+
+// ── DRAWING ───────────────────────────────────────────────────────────────
+{b:"DRAWING", h:`<h1>But Ulises is<br>my friend.</h1>`,
+ n:`<span class="say">"But Ulises is my friend, and you're the first firm I've stood in front of."</span>`},
+
+{b:"DRAWING", h:`<h1 class="gold">So we're doing<br>a drawing.<br>Right now.</h1>`,
+ n:`<span class="say">"So we're doing a drawing. Live. Right now, in this room."</span><span class="do">DO: Energy up. This is the peak.</span>`},
+
+{b:"DRAWING", h:`<div class="prizes">
+  <div class="prize">🥇 <span class="gold">3 months free</span> — fully built</div>
+  <div class="prize">🥈 <span class="gold">1 month free</span> — fully built</div>
+  <div class="prize">🎁 Everyone here — <span class="gold">$499 setup waived</span></div>
+</div>`,
+ n:`<span class="say">"First place: three months, completely free, fully set up. Second: one month. And everyone in this room gets the setup waived regardless."</span>`},
+
+{b:"DRAWING", h:`<h2>Plus everyone gets a<br><span class="gold">free speed-to-lead audit</span>.</h2><p class="sub">I call your number like a buyer would.<br>You get the recording and the timer.</p>`,
+ n:`<span class="say">"And everyone gets this: I'll call YOUR number like a buyer, time how long it takes to reach a human, and send you the recording. Free. Some of you are not going to like what you hear."</span><span class="do">DO: This is the real lead magnet. Costs you 5 minutes each and it sells itself.</span>`},
+
+// ── QR ────────────────────────────────────────────────────────────────────
+{b:"SCAN NOW", h:`<h1>Phones out.</h1>`,
+ n:`<span class="say">"Everybody get your phone out. Camera. Point it up here."</span>`},
+
+{b:"SCAN NOW", h:`<div class="kicker">Scan to enter · 30 seconds</div>
+<div class="qr"><img id="qrimg" alt="Scan to enter the drawing"></div>
+<p class="sub">Name, number, email. That's it.<br>No purchase necessary.</p>`,
+ n:`<span class="say">"Scan it. Name, number, email, thirty seconds. No purchase necessary — this is free to enter."</span><span class="do">DO: LEAVE THIS SLIDE UP. Wait until scanning stops. Your phone buzzes with every entry — call the count out loud: "that's 20... 35..." It creates FOMO.</span>`},
+
+{b:"SCAN NOW", h:`<h2>Still up here for<br>another minute.</h2><p class="big" style="margin-top:3vh">Anybody who didn't get it —<br><span class="gold">now's the time.</span></p>`,
+ n:`<span class="say">"I'll leave it up another minute. Anybody who didn't get it in — now."</span><span class="do">DO: Go BACK a slide to the QR if people are still scanning.</span>`},
+
+{b:"DRAW IT", h:`<h1>Everybody in?</h1>`,
+ n:`<span class="say">"Everybody in? Sure? Last call."</span><span class="do">DO: Wait for nods.</span>`},
+
+{b:"DRAW IT", h:`<h1 class="gold">Let's roll it.</h1>`,
+ n:`<span class="say">"Let's roll it."</span><span class="do">DO: Hit the draw on your phone/laptop — it picks from the live entries and texts you the winners. Read 1st, then 2nd. Big energy.</span>`},
+
+// ── CLOSE ─────────────────────────────────────────────────────────────────
+{b:"CLOSE", h:`<h2>Winners — find me<br>before you leave.<br><span class="gold">You start today.</span></h2>`,
+ n:`<span class="say">"Winners, see me before you walk out. I start building yours tonight."</span>`},
+
+{b:"CLOSE", h:`<h2>Everyone else:<br>I've got <span class="gold">3 spots</span> left<br>this month.</h2>`,
+ n:`<span class="say">"Everyone else — five spots, two just went to the winners. Three left this month, and I'll be calling in the order you scanned."</span><span class="do">DO: Order-you-scanned is real urgency AND it's honest.</span>`},
+
+{b:"CLOSE", h:`<h1>You're already<br>paying for this.</h1><p class="big" style="margin-top:3vh">You're just paying it to<br><span class="hot">the agent who called first.</span></p>`,
+ n:`<span class="say">"Here's the thing. You're already paying for this. You just pay it in the deals that go to whoever picked up first."</span><span class="do">DO: This is your last line. Say it slow. Then stop.</span>`},
+
+{b:"CLOSE", h:`<div class="kicker">Robert Gavaldon · RG Automations</div><h1 class="gold">(915) 226-9501</h1><p class="sub">Ulises can vouch. Go ask him.</p>`,
+ n:`<span class="say">"Robert Gavaldon. Number's up there. Ulises can vouch for me — go ask him. Thank you."</span><span class="do">DO: Stay standing at the front. Do not pack up. Let them come to you.</span>`},
+];
+
+/* ── engine ──────────────────────────────────────────────────────────────── */
+const QR_B64 = "iVBORw0KGgoAAAANSUhEUgAAApIAAAKSAQMAAABbRqklAAAABlBMVEUOGyz///9iB0i4AAADzElEQVR42u2dQY6kMAxFrakDcCSuzpE4QEnpbiD426SkkdqZzbxsKKiqt4n09W1sx1r52gwmTJgwYcKECRMmTJgwYU5mbuZr+Xn4/r60dj3Ru7XZq+0/l/Pu+ztZJ+yP1S+YMGH+P0xLkvcOuvQ6nh2X4+G9Dl2SXwaRY49gwoRZokvvZI2W/vCSoFuzul+6xWo57daCLsGECXOaLt3a42Zod3lyldI/oEswYcL8B7pk5qmkK6rbe0bJNQtdggkT5ixdGuWX+l07VKpfrjTTq9+RX4IJE+YUXfK1eNbo7y4PGHsEEybM3+vSYIk10sjtCtnud3Wj2gP2CCZMmEW6FDPd2UQ1SSyZRHXNM1H4JZgwYVbqUk9qNy8CuAuXui41zyhtpnUCXoGJLsGECbNIlzZ5LXe/erNQqhS1p4mC7R21EsfBhAmz0i9ZevXWQh+KXoKCjeI/9ggmTJgVuuSVAe57Qi3ANqpmstCxQp0ATJgwS+O4EMA9gjs7ozoxUR7qxfQUugQTJswiXUr2xzwsa+KeYqY7Gizex8GECbNcl6IExd5c8/S3d8uZx3jUL8GECbNYl2K66Ep/r7n5LUwX8Ihv96FM6BJMmDDrdOmzID1Ku8NsJuI4mDBhTovjgidyeRo0oFgqCZc2OXQJJkyYhbok9d6xVEmHBezyx1wgjl+CCRNmrS6p6NxGqfehhMFL/lcZ+h3qntgjmDBh/l6XNGsktikmlrSucrNx7xy6BBMmzOo47rI/XkL5KOZOA5seYSC6BBMmzDpd0lRSnmWilipGboPeOfYIJkyYFXFcv7vHT8axAlmz4nkoxHEwYcKcoEuxPlLjOJ39rUL2SpOaiONgwoQ5IY7bwjerFIHfL9va8zS5hl+CCRPmRF2K1sjlKfbt6kMz6r1hwoQ5S5f2cCqcfBfrveM8gcHxA+gSTJgwC3SpjaqSNouRm1sqHbxknB8HEybMOX4pHgenZ1euadTSYHRcow8FJkyY9X4puaAwfymVfYcAbvATdAkmTJh1finXAqQ5ujZqVTE3WNQJwIQJs9gv5ZG5ccaSfRgWN+hKYY9gwoRZ4Zd8qW2SjNLaom3yhFSc24QuwYQJsyqOe44VeHSlWDdK+X/ajoIuwYQJs0qXboe0pOMHzAZnhGtRk50/oU4AJkyY83RpS5Pg4jjdz9OY8EswYcKc55eOz9q+q0O/w4DLVP6ELsGECbNOlz4edqJLG3Yl25Q0iz2CCRNmhS4NtCfPDOgmSrzU9kxBoUswYcIs0aXStcGECRMmTJgwYcKECRMmzHnML//tuhCTCuFlAAAAAElFTkSuQmCC";
+let i = 0, timer = null, t0 = 0, notesOn = false;
+const stage = document.getElementById("stage");
+
+function render(){
+  stage.innerHTML = D.map((s,k)=>`<div class="slide${k===i?" on":""}">${s.h}</div>`).join("");
+  const q = document.getElementById("qrimg");
+  if(q) q.src = "data:image/png;base64," + QR_B64;
+  document.getElementById("bar").style.width = ((i+1)/D.length*100) + "%";
+  document.getElementById("meta").textContent = (i+1) + " / " + D.length;
+  document.getElementById("beat").textContent = D[i].b || "";
+  document.getElementById("notes").innerHTML =
+    `<b>${D[i].b} · slide ${i+1}</b><br>` + (D[i].n || "");
+  const dt = document.getElementById("demoTimer");
+  if(dt && timer) dt.textContent = String(Math.floor((Date.now()-t0)/1000)).padStart(2,"0");
+}
+function go(n){ i = Math.max(0, Math.min(D.length-1, n)); render(); }
+
+document.addEventListener("keydown", e=>{
+  if(e.key==="ArrowRight"||e.key===" "||e.key==="PageDown"){ e.preventDefault(); go(i+1); }
+  else if(e.key==="ArrowLeft"||e.key==="PageUp"){ e.preventDefault(); go(i-1); }
+  else if(e.key==="Home"){ go(0); }
+  else if(e.key==="End"){ go(D.length-1); }
+  else if(e.key.toLowerCase()==="n"){ notesOn=!notesOn; document.getElementById("notes").classList.toggle("on",notesOn); }
+  else if(e.key.toLowerCase()==="f"){ document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen(); }
+  else if(e.key.toLowerCase()==="t"){
+    if(timer){ clearInterval(timer); timer=null; document.getElementById("clock").classList.remove("run"); }
+    else { t0=Date.now(); document.getElementById("clock").classList.add("run");
+           timer=setInterval(()=>{
+             const s=Math.floor((Date.now()-t0)/1000);
+             document.getElementById("clock").textContent =
+               String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");
+             const dt=document.getElementById("demoTimer");
+             if(dt) dt.textContent=String(s).padStart(2,"0");
+           },250); }
+  }
+});
+document.addEventListener("click", e=>{ if(!e.target.closest(".notes")) go(i + (e.clientX < innerWidth*0.25 ? -1 : 1)); });
+render();
+</script>

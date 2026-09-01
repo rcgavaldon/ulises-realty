@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Free AI Setup Drawing — RG Automations</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230e1b2c'/%3E%3Ctext x='32' y='46' font-size='38' text-anchor='middle'%3E🎟️%3C/text%3E%3C/svg%3E">
+<style>
+  :root{--navy:#0e1b2c;--navy2:#16283f;--gold:#c9a227;--gold-soft:#e5c96b;--line:#e6e0d2;--muted:#5b6472}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:Inter,system-ui,sans-serif;background:linear-gradient(165deg,var(--navy),var(--navy2));
+       color:#fff;min-height:100vh;padding:26px 18px 40px;line-height:1.5}
+  .wrap{max-width:440px;margin:0 auto}
+  .eyebrow{font-size:.68rem;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);font-weight:800}
+  h1{font-family:'Playfair Display',Georgia,serif;font-size:1.95rem;line-height:1.15;margin:10px 0 8px}
+  h1 em{color:var(--gold-soft);font-style:italic}
+  .sub{color:#b6c2d2;font-size:.95rem}
+  .prizes{margin:20px 0 22px;display:flex;flex-direction:column;gap:9px}
+  .prize{display:flex;gap:11px;align-items:center;background:rgba(255,255,255,.06);
+         border:1px solid rgba(255,255,255,.13);border-radius:11px;padding:11px 14px;font-size:.9rem}
+  .prize b{color:var(--gold-soft)}
+  form{background:#fff;color:#1b2430;border-radius:16px;padding:24px 20px;box-shadow:0 24px 54px rgba(0,0,0,.4)}
+  label{font-size:.72rem;font-weight:800;letter-spacing:.05em;display:block;margin:14px 0 5px;color:var(--navy)}
+  label:first-child{margin-top:0}
+  input,select,textarea{width:100%;padding:13px 13px;border:1.5px solid var(--line);border-radius:10px;
+    font:inherit;font-size:1rem;background:#faf7f0}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold)}
+  .consent{display:flex;gap:10px;align-items:flex-start;margin:16px 0 4px;font-size:.74rem;color:var(--muted)}
+  .consent input{width:auto;margin-top:3px;flex-shrink:0}
+  button{width:100%;margin-top:16px;background:var(--navy);color:#fff;border:none;padding:16px;
+    border-radius:999px;font-weight:800;font-size:1.05rem;cursor:pointer}
+  button:hover{background:var(--gold);color:var(--navy)}
+  button:disabled{opacity:.6;cursor:wait}
+  .fine{font-size:.7rem;color:#8fa0b4;text-align:center;margin-top:18px;line-height:1.6}
+  .ok{display:none;text-align:center;padding:26px 8px}
+  .ok .big{font-size:3rem}
+  .ok h2{font-family:'Playfair Display',serif;font-size:1.5rem;margin:10px 0 8px}
+  .ok p{color:#b6c2d2;font-size:.95rem}
+  .num{display:inline-block;margin-top:14px;background:rgba(201,162,39,.16);border:1px solid var(--gold);
+       color:var(--gold-soft);border-radius:999px;padding:7px 18px;font-weight:800;font-size:.9rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="entry">
+    <div class="eyebrow">ClearView Realty · Today Only</div>
+    <h1>Win your AI assistant <em>fully set up</em>.</h1>
+    <p class="sub">Website + Sofia answering, calling back, and booking your leads — built for you, free.</p>
+
+    <div class="prizes">
+      <div class="prize">🥇 <span><b>1st — 3 months free</b>, fully set up</span></div>
+      <div class="prize">🥈 <span><b>2nd — 1 month free</b>, fully set up</span></div>
+      <div class="prize">🎁 <span><b>Everyone here — $499 setup fee waived</b> + free speed-to-lead audit of your current number</span></div>
+    </div>
+
+    <form id="f" onsubmit="return go(event)">
+      <label>FULL NAME *</label>
+      <input name="name" required autocomplete="name" placeholder="Your name">
+      <label>CELL PHONE *</label>
+      <input name="phone" type="tel" required autocomplete="tel" inputmode="tel" placeholder="(915) 555-0123">
+      <label>EMAIL</label>
+      <input name="email" type="email" autocomplete="email" placeholder="you@email.com">
+      <label>BROKERAGE / TEAM</label>
+      <input name="brokerage" value="ClearView Realty">
+      <label>WHAT EATS THE MOST OF YOUR TIME?</label>
+      <select name="pain">
+        <option value="">— pick one —</option>
+        <option>Chasing leads who never answer</option>
+        <option>Entering everything into Flexmls</option>
+        <option>Missing calls while I'm showing</option>
+        <option>Following up with old leads</option>
+        <option>After-hours and weekend calls</option>
+        <option>Something else</option>
+      </select>
+      <div class="consent">
+        <input type="checkbox" name="consent" id="c" required>
+        <label for="c" style="margin:0;font-weight:400;letter-spacing:0;color:var(--muted);text-transform:none;font-size:.74rem">
+          Enter me in the drawing and have Robert follow up by call or text about the AI assistant.
+          No purchase necessary. Msg &amp; data rates may apply. Reply STOP anytime.
+        </label>
+      </div>
+      <button id="b">Enter the Drawing →</button>
+    </form>
+    <p class="fine">Winners drawn live, right here, in a few minutes.<br>RG Automations · El Paso, TX</p>
+  </div>
+
+  <div class="ok" id="ok">
+    <div class="big">🎟️</div>
+    <h2>You're in!</h2>
+    <p>Stay put — winners get drawn live in a minute.</p>
+    <div class="num" id="num"></div>
+    <p style="margin-top:18px;font-size:.85rem">Either way, your $499 setup is waived and I'll send your speed-to-lead audit.</p>
+  </div>
+</div>
+
+<script>
+const API = "https://roberto-gavaldon3--ulises-realty-api-api.modal.run/raffle";
+async function go(e){
+  e.preventDefault();
+  const f = e.target, b = document.getElementById("b");
+  b.disabled = true; b.textContent = "Entering…";
+  let count = null;
+  try{
+    const r = await fetch(API, {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        name:f.name.value.trim(), phone:f.phone.value.trim(), email:f.email.value.trim(),
+        brokerage:f.brokerage.value.trim(), pain:f.pain.value, consent:f.consent.checked })});
+    const d = await r.json();
+    if(!d.ok) throw new Error(d.error||"failed");
+    count = d.count;
+  }catch(err){
+    b.disabled = false; b.textContent = "Enter the Drawing →";
+    alert("Couldn't submit — check your phone number and try once more.");
+    return false;
+  }
+  document.getElementById("entry").style.display = "none";
+  document.getElementById("num").textContent = "Entry #" + count;
+  document.getElementById("ok").style.display = "block";
+  return false;
+}
+</script>
+</body>
+</html>
