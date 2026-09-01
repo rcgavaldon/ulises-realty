@@ -316,7 +316,10 @@ INTEREST = {
 
 @app.function(
     image=image,
-    secrets=[modal.Secret.from_name("ulises-realty")],
+    secrets=[modal.Secret.from_name("ulises-realty"),
+             # Spark/Flexmls lives in its own secret so the main one is never
+             # rewritten (and risk losing a key) just to rotate an MLS token.
+             modal.Secret.from_name("ulises-spark")],
     region="us-east",
 )
 @modal.asgi_app()
@@ -343,7 +346,7 @@ def api():
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api", "rev": "v7-sms-cal"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "v8-spark-live"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.
