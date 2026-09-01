@@ -58,6 +58,24 @@
   .notes b{color:var(--gold-soft)}
   .notes .say{color:#fff;font-size:1.05rem}
   .notes .do{color:var(--ok);margin-top:8px;display:block}
+  /* live drawing */
+  .ticker{margin-top:3vh;font-size:clamp(.8rem,1.7vw,1.2rem);color:var(--muted);
+          max-height:22vh;overflow:hidden;line-height:1.9}
+  .ticker span{display:inline-block;background:rgba(255,255,255,.07);
+               border:1px solid rgba(255,255,255,.13);border-radius:999px;
+               padding:3px 13px;margin:3px 4px}
+  .reel{margin:4vh auto 0;height:min(26vh,190px);overflow:hidden;position:relative;
+        background:rgba(255,255,255,.05);border:2px solid var(--gold);border-radius:18px;
+        max-width:min(88vw,860px);display:flex;align-items:center;justify-content:center}
+  .reelName{font-size:clamp(1.8rem,6.5vw,5rem);font-weight:800;letter-spacing:-.02em;
+            white-space:nowrap;padding:0 3vw}
+  .reel.win{background:rgba(201,162,39,.16);box-shadow:0 0 0 6px rgba(201,162,39,.25)}
+  .reel.win .reelName{color:var(--gold-soft)}
+  .spin{margin-top:3.5vh;background:var(--gold);color:#0b1521;border:none;
+        padding:16px 46px;border-radius:999px;font-weight:800;font-size:clamp(1rem,2.2vw,1.5rem);
+        letter-spacing:.14em;cursor:pointer;font-family:inherit}
+  .spin:hover{background:var(--gold-soft)}
+  .spin:disabled{opacity:.45;cursor:default}
   .help{position:fixed;top:14px;right:18px;font-size:.7rem;color:#3d4d61;letter-spacing:.1em;z-index:5}
   .beat{position:fixed;top:14px;left:18px;font-size:.7rem;color:var(--gold);letter-spacing:.18em;
         font-weight:800;z-index:5;text-transform:uppercase}
@@ -68,7 +86,7 @@
 <div class="beat" id="beat"></div>
 <div class="clock" id="clock">SPACE = timer</div>
 <div class="meta" id="meta"></div>
-<div class="help">← → move · N notes · F full · T timer</div>
+<div class="help">← → move · N notes · F full · T timer · S spin</div>
 <div class="notes" id="notes"></div>
 
 <script>
@@ -241,11 +259,20 @@ const D = [
 {b:"SCAN NOW", h:`<h2>Still up here for<br>another minute.</h2><p class="big" style="margin-top:3vh">Anybody who didn't get it —<br><span class="gold">now's the time.</span></p>`,
  n:`<span class="say">"I'll leave it up another minute. Anybody who didn't get it in — now."</span><span class="do">DO: Go BACK a slide to the QR if people are still scanning.</span>`},
 
-{b:"DRAW IT", h:`<h1>Everybody in?</h1>`,
- n:`<span class="say">"Everybody in? Sure? Last call."</span><span class="do">DO: Wait for nods.</span>`},
+{b:"DRAW IT", h:`<div class="kicker">Entries coming in live</div>
+<div class="huge gold" id="liveCount">0</div>
+<h3 style="margin-top:1vh">in the drawing</h3>
+<div class="ticker" id="ticker"></div>`,
+ n:`<span class="say">"Look at that — [read the number] already in."</span><span class="do">DO: This counts up live as they scan. Call the number out as it climbs — that's the FOMO. Stay here until it stops moving.</span>`},
 
-{b:"DRAW IT", h:`<h1 class="gold">Let's roll it.</h1>`,
- n:`<span class="say">"Let's roll it."</span><span class="do">DO: Hit the draw on your phone/laptop — it picks from the live entries and texts you the winners. Read 1st, then 2nd. Big energy.</span>`},
+{b:"DRAW IT", h:`<h1>Everybody in?</h1><p class="big" style="margin-top:3vh">Last call.</p>`,
+ n:`<span class="say">"Everybody in? Sure? Last call — once I spin this, that's it."</span><span class="do">DO: Wait for nods. Go BACK two slides to the QR if anyone yells.</span>`},
+
+{b:"DRAW IT", h:`<div class="kicker" id="drawLabel">First place · 3 months free</div>
+<div class="reel" id="reel"><div class="reelName" id="reelName">—</div></div>
+<button class="spin" id="spinBtn" onclick="spin(event)">SPIN</button>
+<p class="sub" id="spinHint">Press S to spin</p>`,
+ n:`<span class="say">"Let's roll it."</span><span class="do">DO: Press S (or click SPIN). It pulls the real entries, spins, and lands on 1st place. Press S again for 2nd. Winners are texted to your phone automatically. BIG energy — read the name loud.</span>`},
 
 // ── CLOSE ─────────────────────────────────────────────────────────────────
 {b:"CLOSE", h:`<h2>Winners — find me<br>before you leave.<br><span class="gold">You start today.</span></h2>`,
@@ -260,6 +287,85 @@ const D = [
 {b:"CLOSE", h:`<div class="kicker">Robert Gavaldon · RG Automations</div><h1 class="gold">(915) 226-9501</h1><p class="sub">Ulises can vouch. Go ask him.</p>`,
  n:`<span class="say">"Robert Gavaldon. Number's up there. Ulises can vouch for me — go ask him. Thank you."</span><span class="do">DO: Stay standing at the front. Do not pack up. Let them come to you.</span>`},
 ];
+
+/* ── live drawing ─────────────────────────────────────────────────────────
+   Open the deck as  pitch.html#t=YOUR_ADMIN_TOKEN  and the entry counter
+   goes live and SPIN works. Without a token the deck still presents fine —
+   the counter just sits at 0.
+   ───────────────────────────────────────────────────────────────────────── */
+const API = "https://roberto-gavaldon3--ulises-realty-api-api.modal.run";
+let TOK = "";
+if(location.hash.startsWith("#t=")){
+  TOK = decodeURIComponent(location.hash.slice(3));
+  try{ localStorage.setItem("pitch_tok", TOK); }catch(e){}
+  history.replaceState(null,"",location.pathname);
+} else { try{ TOK = localStorage.getItem("pitch_tok") || ""; }catch(e){} }
+
+let ENTRIES = [], drawStage = 0, WINNERS = [], spinning = false;
+const firstName = e => (e.name||"").trim().split(/\s+/)[0] || "—";
+
+async function pollEntries(){
+  if(!TOK) return;
+  try{
+    const r = await fetch(API + "/admin/raffle", {headers:{"x-admin-token":TOK}});
+    if(!r.ok) return;
+    ENTRIES = (await r.json()).entries || [];
+    paintLive();
+  }catch(e){}
+}
+function paintLive(){
+  const c = document.getElementById("liveCount");
+  if(c) c.textContent = ENTRIES.length;
+  const t = document.getElementById("ticker");
+  if(t) t.innerHTML = ENTRIES.slice(0,40).map(e=>`<span>${firstName(e)}</span>`).join("");
+}
+setInterval(pollEntries, 3000);
+pollEntries();
+
+async function spin(ev){
+  if(ev) ev.stopPropagation();
+  if(spinning) return;
+  const reel = document.getElementById("reel"), nameEl = document.getElementById("reelName"),
+        btn = document.getElementById("spinBtn"), label = document.getElementById("drawLabel"),
+        hint = document.getElementById("spinHint");
+  if(!reel) return;
+  if(!TOK){ nameEl.textContent = "no token — open pitch.html#t=…"; return; }
+  if(drawStage >= 2){ return; }
+
+  // pull the official winners once, from the server (auditable, seeded)
+  if(!WINNERS.length){
+    try{
+      const r = await fetch(API + "/admin/raffle/draw", {method:"POST", headers:{"x-admin-token":TOK}});
+      const d = await r.json();
+      if(d.error){ nameEl.textContent = d.error; return; }
+      WINNERS = [d.first, d.second];
+    }catch(e){ nameEl.textContent = "draw failed — check signal"; return; }
+  }
+  const winner = WINNERS[drawStage];
+  const pool = ENTRIES.length ? ENTRIES : WINNERS;
+
+  spinning = true; btn.disabled = true; reel.classList.remove("win");
+  if(hint) hint.textContent = "";
+  let t = 0, delay = 45;
+  (function tick(){
+    nameEl.textContent = firstName(pool[Math.floor(Math.random()*pool.length)]);
+    t += delay;
+    delay *= 1.09;                       // decelerate
+    if(t < 3600){ setTimeout(tick, delay); }
+    else {
+      nameEl.textContent = (winner.name || "—");
+      reel.classList.add("win");
+      spinning = false; drawStage++;
+      if(drawStage === 1){
+        label.textContent = "Second place · 1 month free";
+        btn.textContent = "SPIN AGAIN"; btn.disabled = false;
+        if(hint) hint.textContent = "Press S for 2nd place";
+      } else {
+        btn.textContent = "DONE"; if(hint) hint.textContent = "Winners texted to your phone";
+      }
+    }
+  })();
+}
 
 /* ── engine ──────────────────────────────────────────────────────────────── */
 const QR_B64 = "iVBORw0KGgoAAAANSUhEUgAAApIAAAKSAQMAAABbRqklAAAABlBMVEUOGyz///9iB0i4AAADzElEQVR42u2dQY6kMAxFrakDcCSuzpE4QEnpbiD426SkkdqZzbxsKKiqt4n09W1sx1r52gwmTJgwYcKECRMmTJgwYU5mbuZr+Xn4/r60dj3Ru7XZq+0/l/Pu+ztZJ+yP1S+YMGH+P0xLkvcOuvQ6nh2X4+G9Dl2SXwaRY49gwoRZokvvZI2W/vCSoFuzul+6xWo57daCLsGECXOaLt3a42Zod3lyldI/oEswYcL8B7pk5qmkK6rbe0bJNQtdggkT5ixdGuWX+l07VKpfrjTTq9+RX4IJE+YUXfK1eNbo7y4PGHsEEybM3+vSYIk10sjtCtnud3Wj2gP2CCZMmEW6FDPd2UQ1SSyZRHXNM1H4JZgwYVbqUk9qNy8CuAuXui41zyhtpnUCXoGJLsGECbNIlzZ5LXe/erNQqhS1p4mC7R21EsfBhAmz0i9ZevXWQh+KXoKCjeI/9ggmTJgVuuSVAe57Qi3ANqpmstCxQp0ATJgwS+O4EMA9gjs7ozoxUR7qxfQUugQTJswiXUr2xzwsa+KeYqY7Gizex8GECbNcl6IExd5c8/S3d8uZx3jUL8GECbNYl2K66Ep/r7n5LUwX8Ihv96FM6BJMmDDrdOmzID1Ku8NsJuI4mDBhTovjgidyeRo0oFgqCZc2OXQJJkyYhbok9d6xVEmHBezyx1wgjl+CCRNmrS6p6NxGqfehhMFL/lcZ+h3qntgjmDBh/l6XNGsktikmlrSucrNx7xy6BBMmzOo47rI/XkL5KOZOA5seYSC6BBMmzDpd0lRSnmWilipGboPeOfYIJkyYFXFcv7vHT8axAlmz4nkoxHEwYcKcoEuxPlLjOJ39rUL2SpOaiONgwoQ5IY7bwjerFIHfL9va8zS5hl+CCRPmRF2K1sjlKfbt6kMz6r1hwoQ5S5f2cCqcfBfrveM8gcHxA+gSTJgwC3SpjaqSNouRm1sqHbxknB8HEybMOX4pHgenZ1euadTSYHRcow8FJkyY9X4puaAwfymVfYcAbvATdAkmTJh1finXAqQ5ujZqVTE3WNQJwIQJs9gv5ZG5ccaSfRgWN+hKYY9gwoRZ4Zd8qW2SjNLaom3yhFSc24QuwYQJsyqOe44VeHSlWDdK+X/ajoIuwYQJs0qXboe0pOMHzAZnhGtRk50/oU4AJkyY83RpS5Pg4jjdz9OY8EswYcKc55eOz9q+q0O/w4DLVP6ELsGECbNOlz4edqJLG3Yl25Q0iz2CCRNmhS4NtCfPDOgmSrzU9kxBoUswYcIs0aXStcGECRMmTJgwYcKECRMmzHnML//tuhCTCuFlAAAAAElFTkSuQmCC";
@@ -277,6 +383,9 @@ function render(){
     `<b>${D[i].b} · slide ${i+1}</b><br>` + (D[i].n || "");
   const dt = document.getElementById("demoTimer");
   if(dt && timer) dt.textContent = String(Math.floor((Date.now()-t0)/1000)).padStart(2,"0");
+  paintLive();
+  const b = document.getElementById("spinBtn");
+  if(b && drawStage >= 2){ b.textContent = "DONE"; b.disabled = true; }
 }
 function go(n){ i = Math.max(0, Math.min(D.length-1, n)); render(); }
 
@@ -285,6 +394,7 @@ document.addEventListener("keydown", e=>{
   else if(e.key==="ArrowLeft"||e.key==="PageUp"){ e.preventDefault(); go(i-1); }
   else if(e.key==="Home"){ go(0); }
   else if(e.key==="End"){ go(D.length-1); }
+  else if(e.key.toLowerCase()==="s"){ e.preventDefault(); spin(); }
   else if(e.key.toLowerCase()==="n"){ notesOn=!notesOn; document.getElementById("notes").classList.toggle("on",notesOn); }
   else if(e.key.toLowerCase()==="f"){ document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen(); }
   else if(e.key.toLowerCase()==="t"){
@@ -299,6 +409,9 @@ document.addEventListener("keydown", e=>{
            },250); }
   }
 });
-document.addEventListener("click", e=>{ if(!e.target.closest(".notes")) go(i + (e.clientX < innerWidth*0.25 ? -1 : 1)); });
+document.addEventListener("click", e=>{
+  if(e.target.closest(".notes") || e.target.closest(".spin")) return;   // don't advance off the wheel
+  go(i + (e.clientX < innerWidth*0.25 ? -1 : 1));
+});
 render();
 </script>
