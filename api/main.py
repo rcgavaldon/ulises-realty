@@ -565,9 +565,8 @@ def api():
         entries = [e for e in entries if e["phone"] != phone]  # one entry per phone
         entries.append(entry)
         state["raffle"] = entries[-500:]
-        _sms_owner(f"🎟️ ENTRY #{len(entries)} — {name} · {phone}"
-                   f"{' · ' + entry['brokerage'] if entry['brokerage'] else ''}"
-                   f"{chr(10) + 'Pain: ' + entry['pain'][:80] if entry['pain'] else ''}")
+        # No per-entry SMS — 70 buzzes mid-pitch is noise. The deck shows
+        # entries on screen live instead; the owner gets one text at the draw.
         return JSONResponse({"ok": True, "count": len(entries)})
 
     @web.get("/admin/raffle")
@@ -575,6 +574,15 @@ def api():
         if req.headers.get("x-admin-token") != os.environ.get("CRON_TOKEN"):
             return JSONResponse({"error": "forbidden"}, status_code=403)
         return {"entries": (state.get("raffle", []) or [])[::-1]}
+
+    # Winner texts stay DISARMED until the owner turns them on, so nothing is
+    # ever sent to a room full of strangers without an explicit decision.
+    @web.post("/admin/raffle/arm-texts")
+    def admin_arm_texts(req: Request):
+        if req.headers.get("x-admin-token") != os.environ.get("CRON_TOKEN"):
+            return JSONResponse({"error": "forbidden"}, status_code=403)
+        state["raffle_texts_armed"] = True
+        return {"ok": True, "armed": True}
 
     @web.post("/admin/raffle/draw")
     def admin_raffle_draw(req: Request):
@@ -596,7 +604,22 @@ def api():
         _sms_owner("🏆 DRAWING RESULT\n"
                    f"1st (3 months): {winners[0]['name']} {winners[0]['phone']}\n"
                    f"2nd (1 month): {winners[1]['name']} {winners[1]['phone']}")
-        return {"first": winners[0], "second": winners[1], "total": len(entries)}
+
+        texted = False
+        if state.get("raffle_texts_armed") and not state.get("raffle_texted"):
+            prizes = ["3 months free", "1 month free"]
+            for w, prize in zip(winners, prizes):
+                if _blocked(w["phone"]):
+                    continue
+                _sms(w["phone"],
+                     f"You won! {w['name'].split()[0]}, this is Robert with RG Automations — "
+                     f"you just won {prize} of your AI assistant, fully set up, at the ClearView "
+                     f"drawing. I'll call you today to get you started. Reply STOP to opt out.")
+            state["raffle_texted"] = True
+            texted = True
+
+        return {"first": winners[0], "second": winners[1], "total": len(entries),
+                "texted": texted}
 
     # ── Retell webhook ───────────────────────────────────────────────────────
     @web.post("/retell-webhook")

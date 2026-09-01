@@ -302,7 +302,13 @@ if(location.hash.startsWith("#t=")){
 } else { try{ TOK = localStorage.getItem("pitch_tok") || ""; }catch(e){} }
 
 let ENTRIES = [], drawStage = 0, WINNERS = [], spinning = false;
-const firstName = e => (e.name||"").trim().split(/\s+/)[0] || "—";
+// On-screen names are "First L." — enough for someone to recognise themselves,
+// never a full name projected in front of a room.
+const shortName = e => {
+  const p = (e.name||"").trim().split(/\s+/).filter(Boolean);
+  if(!p.length) return "—";
+  return p.length === 1 ? p[0] : p[0] + " " + p[p.length-1][0].toUpperCase() + ".";
+};
 
 async function pollEntries(){
   if(!TOK) return;
@@ -317,7 +323,7 @@ function paintLive(){
   const c = document.getElementById("liveCount");
   if(c) c.textContent = ENTRIES.length;
   const t = document.getElementById("ticker");
-  if(t) t.innerHTML = ENTRIES.slice(0,40).map(e=>`<span>${firstName(e)}</span>`).join("");
+  if(t) t.innerHTML = ENTRIES.slice(0,40).map(e=>`<span>${shortName(e)}</span>`).join("");
 }
 setInterval(pollEntries, 3000);
 pollEntries();
@@ -348,12 +354,12 @@ async function spin(ev){
   if(hint) hint.textContent = "";
   let t = 0, delay = 45;
   (function tick(){
-    nameEl.textContent = firstName(pool[Math.floor(Math.random()*pool.length)]);
+    nameEl.textContent = shortName(pool[Math.floor(Math.random()*pool.length)]);
     t += delay;
     delay *= 1.09;                       // decelerate
     if(t < 3600){ setTimeout(tick, delay); }
     else {
-      nameEl.textContent = (winner.name || "—");
+      nameEl.textContent = shortName(winner);
       reel.classList.add("win");
       spinning = false; drawStage++;
       if(drawStage === 1){
