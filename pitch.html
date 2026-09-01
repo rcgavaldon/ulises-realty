@@ -261,7 +261,7 @@ const D = [
 
 {b:"DRAW IT", h:`<div class="kicker">Entries coming in live</div>
 <div class="huge gold" id="liveCount">0</div>
-<h3 style="margin-top:1vh">in the drawing</h3>
+<h3 style="margin-top:1vh">in the drawing<span id="liveDot" style="color:#4a5a6e;font-size:.6em"></span></h3>
 <div class="ticker" id="ticker"></div>`,
  n:`<span class="say">"Look at that — [read the number] already in."</span><span class="do">DO: This counts up live as they scan. Call the number out as it climbs — that's the FOMO. Stay here until it stops moving.</span>`},
 
@@ -310,23 +310,33 @@ const shortName = e => {
   return p.length === 1 ? p[0] : p[0] + " " + p[p.length-1][0].toUpperCase() + ".";
 };
 
-async function pollEntries(){
+let lastOk = 0;
+async function pollEntries(retry){
   if(!TOK) return;
   try{
     const r = await fetch(API + "/admin/raffle", {headers:{"x-admin-token":TOK}});
-    if(!r.ok) return;
+    if(!r.ok) throw new Error(r.status);
     ENTRIES = (await r.json()).entries || [];
+    lastOk = Date.now();
     paintLive();
-  }catch(e){}
+  }catch(e){
+    // Modal cold-starts can drop one request; retry fast rather than showing
+    // a stale 0 to a room full of people who just scanned.
+    if(!retry) setTimeout(()=>pollEntries(true), 700);
+  }
 }
 function paintLive(){
   const c = document.getElementById("liveCount");
   if(c) c.textContent = ENTRIES.length;
   const t = document.getElementById("ticker");
   if(t) t.innerHTML = ENTRIES.slice(0,40).map(e=>`<span>${shortName(e)}</span>`).join("");
+  const dot = document.getElementById("liveDot");
+  if(dot) dot.textContent = (lastOk && Date.now()-lastOk < 12000) ? "" : " ⟳";
 }
-setInterval(pollEntries, 3000);
+setInterval(()=>pollEntries(), 3000);
 pollEntries();
+// warm the API the moment the deck opens so the first poll never cold-starts
+fetch(API + "/health").catch(()=>{});
 
 async function spin(ev){
   if(ev) ev.stopPropagation();
