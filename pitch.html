@@ -108,8 +108,11 @@ const D = [
 {b:"HANDS UP", h:`<h1>Hands up.</h1><p class="big" style="margin-top:4vh">Who here wants to<br><span class="gold">make more money</span> this year?</p>`,
  n:`<span class="say">"Hands up — who wants to make more money this year?"</span><span class="do">DO: Raise YOUR hand first. Wait for the room. Everyone's hand goes up.</span>`},
 
-{b:"HANDS UP", h:`<h2>Keep it up if you've<br>ever lost a lead because<br><span class="hot">you couldn't pick up</span>.</h2>`,
- n:`<span class="say">"Keep it up if you've ever lost a deal because you were in a showing, or driving, or asleep."</span><span class="do">DO: Nobody drops. Say "nobody put their hand down. Interesting."</span>`},
+{b:"HANDS UP", h:`<h2>Keep it up if your phone<br>has rung while you were<br><span class="hot">standing in a showing</span>.</h2>`,
+ n:`<span class="say">"Keep it up if your phone has rung while you were standing in a showing with another client."</span><span class="do">DO: Nobody drops. Say "nobody put their hand down. Interesting."</span>`},
+
+{b:"HANDS UP", h:`<h2>Keep it up if you've ever<br>let one go to voicemail<br><span class="hot">and they never called back</span>.</h2>`,
+ n:`<span class="say">"Keep it up if one of those went to voicemail — and they never called back. You don't even know who they were."</span><span class="do">DO: This one lands hardest. Every agent has lost a sign call this way. Let it sit.</span>`},
 
 {b:"HANDS UP", h:`<h2>Keep it up if you<br><span class="hot">hate</span> typing leads into<br>Flexmls at 9pm.</h2>`,
  n:`<span class="say">"Keep it up if you hate entering everything into Flexmls at nine at night."</span><span class="do">DO: Laugh with them. This is the bonding moment.</span>`},
@@ -127,18 +130,34 @@ const D = [
 {b:"THE MATH", h:`<p class="big">You're not competing on</p><h1>service.</h1><p class="big" style="margin-top:3vh">You're competing on <span class="gold">who rings first.</span></p>`,
  n:`<span class="say">"You're not losing on service. You're the best agents in this city. You're losing on who rings first."</span>`},
 
-{b:"THE MATH", h:`<div class="kicker">Do this math with me</div><h2>One extra closing<br>a year at El Paso median<br>is about <span class="gold">$7,000</span> to you.</h2>`,
- n:`<span class="say">"One extra deal a year. Median El Paso home, three percent, your split — call it seven grand. Just ONE."</span><span class="do">DO: Say "if you think that number's wrong, use your own. It still works."</span>`},
+{b:"THE MATH", h:`<div class="kicker">Do this math with me</div><h2>One closing at El Paso median,<br>after your split,<br>is about <span class="gold">$4,800</span> in your pocket.</h2>`,
+ n:`<span class="say">"$250,000 house. Your side of the commission, minus your split, minus fees — call it forty-eight hundred in YOUR pocket. Not gross. Take-home."</span><span class="do">DO: Use TAKE-HOME, never gross — this room knows their splits and an inflated number loses them instantly. Then say: "if your split's better, use your number. It only helps my case."</span>`},
 
 {b:"THE MATH", h:`<h2>Hold that number.<br>I'm coming back to it.</h2>`,
  n:`<span class="say">"Hold that number. I'm coming back to it."</span><span class="do">DO: Move fast here. Don't sell yet.</span>`},
+
+// ── ULISES PROOF — fill these in from his dashboard before you present ────
+{b:"PROOF", h:`<div class="kicker">You don't have to believe me</div><h2>Ulises has been<br>running this for<br><span class="gold">__ weeks</span>.</h2>`,
+ n:`<span class="say">"You don't have to take my word for any of this. Ulises has been running it."</span><span class="do">DO: ⚠️ FILL IN the blanks on the next two slides from his dashboard the morning of. Real numbers or CUT these slides — a blank looks worse than no slide.</span>`},
+
+{b:"PROOF", h:`<div class="kicker">Before Sofia</div><h2>Calls after 6pm:<br><span class="hot">went to voicemail</span></h2><div class="kicker" style="margin-top:5vh">After Sofia</div><h2><span class="gold">__ calls answered</span><br><span class="gold">__ appointments booked</span></h2>`,
+ n:`<span class="say">"Before: after six o'clock, voicemail. After: [X] calls answered, [Y] appointments booked — while he was asleep or at dinner."</span><span class="do">DO: Pull from the dashboard: inbound answered + booked. Ulises is standing right there — point at him and let him nod.</span>`},
+
+{b:"PROOF", h:`<h2>Ask him yourself<br>when I'm done.</h2>`,
+ n:`<span class="say">"He's right there. Ask him yourself when I'm done — I'm not going to stand up here and tell you it works, he can."</span><span class="do">DO: Best credibility move in the deck. Make sure Ulises knows this is coming.</span>`},
 
 // ── THE TURN ──────────────────────────────────────────────────────────────
 {b:"THE TURN", h:`<h1>So I built<br><span class="gold">Sofia</span>.</h1>`,
  n:`<span class="say">"So I built Sofia."</span><span class="do">DO: One beat. That's the whole slide.</span>`},
 
-{b:"THE TURN", h:`<h2>She answers your phone.<br>Day, night, weekends.<br><span class="gold">In English or Spanish.</span></h2>`,
- n:`<span class="say">"She answers your line — day, night, weekends, English or Spanish, and she tells people she's an AI assistant. No tricks."</span>`},
+{b:"THE TURN", h:`<h2>You forward your line<br>to her when you're busy.<br><span class="gold">She answers. Every time.</span></h2>`,
+ n:`<span class="say">"You forward your line to her when you're in a showing, driving, at dinner, asleep. She picks up. Every single time."</span><span class="do">DO: THIS is your strongest, least-copyable feature — Ylopo, Lofty, CINC, Sierra literally cannot answer a ringing phone. Slow down here.</span>`},
+
+{b:"THE TURN", h:`<h2>Sign call at 8pm.<br>You're at dinner.<br><span class="gold">She books them anyway.</span></h2>`,
+ n:`<span class="say">"Somebody drives past your sign at eight at night and calls. You're at dinner with your family. She answers, tells them about the house, and books them on your calendar before they hang up."</span>`},
+
+{b:"THE TURN", h:`<h2>Day, night, weekends.<br><span class="gold">In English or Spanish.</span></h2><p class="sub">And she tells them she's an AI. No tricks.</p>`,
+ n:`<span class="say">"Day, night, weekends. English or Spanish. And she tells people up front she's an AI assistant — no tricks, no pretending."</span><span class="do">DO: In El Paso, Spanish is the killer. No competitor in this vertical sells Spanish voice at all.</span>`},
 
 {b:"THE TURN", h:`<h2>Somebody fills out<br>your website form —<br>their phone rings in<br><span class="gold">60 seconds</span>.</h2>`,
  n:`<span class="say">"Somebody hits your website at 11pm — their phone rings in sixty seconds. While they're still on your site."</span>`},
@@ -207,11 +226,20 @@ const D = [
 {b:"PRICE", h:`<div class="kicker">Then</div><div class="huge">$499</div><h2>a month. Everything.</h2><p class="sub">No per-lead fees. No credits. No contract.</p>`,
  n:`<span class="say">"Then it's four ninety-nine a month. No per-lead charges, no credit packs, no annual contract."</span>`},
 
-{b:"PRICE", h:`<h2>Remember that<br><span class="gold">$7,000</span> deal?</h2><p class="big" style="margin-top:3vh">One a year pays for this<br>and hands you <span class="gold">$1,000 back</span>.</p>`,
- n:`<span class="say">"Remember the seven grand? Sofia has to save you ONE deal a year to pay for herself — and you pocket a thousand on top. One. Deal."</span><span class="do">DO: This is the logical close. Let it sit for two full seconds.</span>`},
+{b:"PRICE", h:`<h2>Remember that<br><span class="gold">$4,800</span> closing?</h2>`,
+ n:`<span class="say">"Remember the forty-eight hundred?"</span>`},
 
-{b:"PRICE", h:`<h2>Pay for the year up front:<br><span class="gold">two months free</span><br>and your price never moves.</h2>`,
- n:`<span class="say">"Want the year up front? Two months free, and your rate is locked for life — I never raise it on you."</span>`},
+{b:"PRICE", h:`<h1>She has to save you<br><span class="gold">one deal a year.</span></h1><p class="big" style="margin-top:3vh">Not one a month.<br><span class="gold">One. A. Year.</span></p>`,
+ n:`<span class="say">"Sofia doesn't have to find you a deal a month. She has to save you ONE deal a year. One. If she catches one buyer at 9pm who would've called somebody else — she paid for herself."</span><span class="do">DO: This is the logical close. Say the last three words separately. Then STOP for two full seconds.</span>`},
+
+{b:"PRICE", h:`<div class="kicker">Pay the year up front</div><div class="huge gold">$4,990</div><h2>Two months free.<br>One closing covers<br>your entire year.</h2><p class="sub">And your rate never moves. Ever.</p>`,
+ n:`<span class="say">"Pay the year up front: four thousand nine hundred ninety. Two months free. That is ONE closing — one — and your whole year is paid. Rate locked for life, I never raise it on you."</span><span class="do">DO: This is the true version of "one deal pays the year" — it only works on the annual plan. Don't claim it on monthly; someone will do the math out loud.</span>`},
+
+{b:"PRICE", h:`<h1>Everything after<br>that first deal<br>is <span class="gold">yours</span>.</h1>`,
+ n:`<span class="say">"And every deal after that first one? That's all profit. That's just yours."</span>`},
+
+{b:"PRICE", h:`<div class="kicker">If she finds you one a month</div><div class="huge gold">$57,000</div><h2>a year to you.<br>On a <span class="gold">$4,990</span> spend.</h2>`,
+ n:`<span class="say">"And if she finds you one a month? That's fifty-seven thousand dollars a year, on a five thousand dollar spend. Nine to one."</span><span class="do">DO: Say it fast and move on — the ONE-A-YEAR slide is the close, this is just the ceiling.</span>`},
 
 // ── GUARANTEE ─────────────────────────────────────────────────────────────
 {b:"GUARANTEE", h:`<h1>And I'll take<br>the risk<br><span class="gold">off you.</span></h1>`,
