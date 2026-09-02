@@ -66,6 +66,7 @@
     <h2>Access</h2>
     <input type="password" id="tok" placeholder="access token" onkeydown="if(event.key==='Enter')unlock()">
     <button onclick="unlock()">Open Panel</button>
+    <p class="note" id="loginMsg"></p>
   </div>
 </div>
 
@@ -141,28 +142,47 @@ if(location.hash.startsWith("#t=")){
   try{ history.replaceState(null, "", location.pathname); }catch(e){}
 }
 
+class AuthError extends Error {}
 async function api(path, opts={}){
   const r = await fetch(API+path, {...opts, headers:{"Content-Type":"application/json","x-admin-token":TOKEN,...(opts.headers||{})}});
-  if(r.status===403) throw new Error("bad token");
+  if(r.status===403) throw new AuthError("bad token");
+  if(!r.ok) throw new Error("http "+r.status);
   return r.json();
 }
 
 async function unlock(tok){
   // tok is passed by the magic link; only fall back to the input box when a
-  // human actually typed one. (This clobbering the URL token was the bug.)
+  // human actually typed one.
   TOKEN = (tok !== undefined && tok !== null && tok !== "")
     ? tok : document.getElementById("tok").value.trim();
   if(!TOKEN){ return; }
-  try{
-    await load();
-    try{ localStorage.setItem("ur_admin_tok", TOKEN); }catch(e){}
-    document.getElementById("login").style.display="none";
-    document.getElementById("panel").style.display="block";
-  }catch(e){
-    document.getElementById("login").style.display="block";
-    document.getElementById("panel").style.display="none";
-    alert("That link or token isn't valid.");
+
+  const msg = document.getElementById("loginMsg");
+  // The API sleeps when idle, so the first request after a quiet spell can be
+  // slow or drop outright. A cold start is NOT a bad token — retry before
+  // ever telling someone their link is wrong.
+  for(let attempt = 0; attempt < 4; attempt++){
+    try{
+      if(msg) msg.textContent = attempt ? "Waking things up…" : "Loading…";
+      await load();
+      try{ localStorage.setItem("ur_admin_tok", TOKEN); }catch(e){}
+      document.getElementById("login").style.display = "none";
+      document.getElementById("panel").style.display = "block";
+      if(msg) msg.textContent = "";
+      return;
+    }catch(e){
+      if(e instanceof AuthError){
+        if(msg) msg.textContent = "";
+        document.getElementById("login").style.display = "block";
+        document.getElementById("panel").style.display = "none";
+        try{ localStorage.removeItem("ur_admin_tok"); }catch(_){}
+        alert("That link isn't valid — ask Robert for a new one.");
+        return;
+      }
+      await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+    }
   }
+  if(msg) msg.textContent = "Couldn't reach the server. Check your signal and reload.";
 }
 
 function signOut(){
@@ -303,6 +323,7 @@ async function saveSettings(){
   const m = document.getElementById("savedMsg"); m.textContent="✓ saved"; setTimeout(()=>m.textContent="",2500);
 }
 
+fetch(API + "/health").catch(()=>{});   // wake the API before the first real call
 if(TOKEN){ document.getElementById("tok").value = TOKEN; unlock(TOKEN); }
 </script>
 </body>
