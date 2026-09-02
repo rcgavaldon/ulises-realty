@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sofia Setup — Ulises Ortega</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230e1b2c'/%3E%3Ctext x='32' y='46' font-size='34' text-anchor='middle'%3E📞%3C/text%3E%3C/svg%3E">
+<style>
+  :root{--navy:#0e1b2c;--navy2:#16283f;--gold:#c9a227;--gold-soft:#e5c96b;
+        --paper:#faf7f0;--ink:#1b2430;--muted:#5b6472;--line:#e6e0d2;--ok:#1e7a4f;--bad:#b3402e}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:Inter,system-ui,sans-serif;background:var(--paper);color:var(--ink);line-height:1.6}
+  .hero{background:linear-gradient(160deg,var(--navy),var(--navy2));color:#fff;padding:34px 20px 30px;text-align:center}
+  .hero h1{font-family:'Playfair Display',Georgia,serif;font-size:1.7rem;margin-bottom:6px}
+  .hero p{color:#b6c2d2;font-size:.95rem}
+  .num{display:inline-block;margin-top:14px;background:rgba(201,162,39,.16);border:1px solid var(--gold);
+       color:var(--gold-soft);border-radius:12px;padding:10px 22px;font-size:1.35rem;font-weight:800;letter-spacing:.02em}
+  .wrap{max-width:640px;margin:0 auto;padding:26px 18px 70px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px 20px;margin-bottom:18px}
+  h2{font-family:'Playfair Display',serif;font-size:1.25rem;color:var(--navy);margin-bottom:4px}
+  .lead{color:var(--muted);font-size:.92rem;margin-bottom:16px}
+  .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .tab{border:1.5px solid var(--line);background:var(--paper);border-radius:999px;padding:8px 18px;
+       font-weight:700;font-size:.85rem;cursor:pointer;font-family:inherit;color:var(--ink)}
+  .tab.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+  .step{display:flex;gap:13px;margin-bottom:14px;align-items:flex-start}
+  .step .n{flex-shrink:0;width:26px;height:26px;border-radius:50%;background:var(--navy);color:#fff;
+           font-weight:800;font-size:.8rem;display:flex;align-items:center;justify-content:center}
+  .code{display:block;background:var(--navy);color:var(--gold-soft);font-family:ui-monospace,Menlo,monospace;
+        font-size:1.15rem;font-weight:700;padding:14px 16px;border-radius:10px;margin:8px 0;
+        text-align:center;letter-spacing:.04em;word-break:break-all}
+  .dial{display:block;text-align:center;background:var(--gold);color:var(--navy);font-weight:800;
+        padding:13px;border-radius:999px;margin-top:8px;font-size:.95rem}
+  .dial:hover{background:var(--navy);color:#fff}
+  .off{background:#fff;border:1.5px solid var(--line);color:var(--ink)}
+  .off:hover{background:var(--bad);color:#fff;border-color:var(--bad)}
+  .why{background:var(--paper);border-left:3px solid var(--gold);padding:12px 14px;border-radius:0 8px 8px 0;
+       font-size:.87rem;color:var(--muted);margin-top:12px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:520px){.grid2{grid-template-columns:1fr}}
+  ul{margin:10px 0 0 18px;font-size:.92rem}
+  li{margin-bottom:7px}
+  .ok{color:var(--ok);font-weight:700}
+  .warn{background:#fff8e1;border:1px solid #eadfa8;border-radius:10px;padding:12px 14px;font-size:.86rem;margin-top:12px}
+  footer{text-align:center;color:var(--muted);font-size:.78rem;padding:0 18px 40px}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>Your Sofia Setup</h1>
+  <p>Everything you need to switch her on and off.</p>
+  <div class="num" id="sofiaNum">(505) 520-2840</div>
+</div>
+
+<div class="wrap">
+
+  <div class="card">
+    <h2>What Sofia does</h2>
+    <p class="lead">Two separate jobs. They work independently.</p>
+    <ul>
+      <li><b>She answers your phone</b> — when you forward your line to her, she picks up every call you can't. She talks through what they're looking for, books them on your calendar, and texts you what happened.</li>
+      <li><b>She calls people from your website</b> — the moment someone fills out your form, their phone rings in about 60 seconds. <span class="ok">This one is already running. Nothing to set up.</span></li>
+      <li>She works in <b>English and Spanish</b>, day, night, and weekends.</li>
+      <li>She only books <b>inside the hours you set</b>, and she checks your calendar first so she never double-books you.</li>
+      <li>If someone doesn't answer, she texts them and tries again at 5 minutes, 30 minutes, and an hour.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>Turn her on</h2>
+    <p class="lead">Pick your carrier. This forwards calls to Sofia <b>only when you don't pick up</b> — your phone always rings first.</p>
+
+    <div class="tabs">
+      <button class="tab on" onclick="pick('gsm',this)">T-Mobile / AT&amp;T</button>
+      <button class="tab" onclick="pick('vz',this)">Verizon</button>
+      <button class="tab" onclick="pick('iphone',this)">iPhone menu</button>
+    </div>
+
+    <div id="gsm" class="pane">
+      <div class="step"><div class="n">1</div><div>Open your phone dialer.</div></div>
+      <div class="step"><div class="n">2</div><div>Dial this exactly, then press call:
+        <span class="code" id="gsmOn"></span>
+        <a class="dial" id="gsmOnLink">Tap to dial it for me</a>
+      </div></div>
+      <div class="step"><div class="n">3</div><div>You'll see a short confirmation on screen. That's it.</div></div>
+      <div class="why">The <b>20</b> at the end is how many seconds your phone rings before Sofia picks up. Want longer? Change it to 25 or 30.</div>
+    </div>
+
+    <div id="vz" class="pane" style="display:none">
+      <div class="step"><div class="n">1</div><div>Dial <b>*71</b> followed by Sofia's number, then press call:
+        <span class="code" id="vzOn"></span>
+        <a class="dial" id="vzOnLink">Tap to dial it for me</a>
+      </div></div>
+      <div class="step"><div class="n">2</div><div>Wait for the tone or confirmation, then hang up.</div></div>
+      <div class="why">On Verizon, <b>*71</b> forwards only when you're busy or don't answer. (<b>*72</b> would forward <i>everything</i> — don't use that unless you want Sofia taking every call.)</div>
+    </div>
+
+    <div id="iphone" class="pane" style="display:none">
+      <div class="step"><div class="n">1</div><div>Settings → Apps → <b>Phone</b></div></div>
+      <div class="step"><div class="n">2</div><div>Tap <b>Call Forwarding</b> → turn it <b>on</b></div></div>
+      <div class="step"><div class="n">3</div><div>Enter <b id="ipNum"></b> as the Forward To number</div></div>
+      <div class="warn">⚠️ The iPhone menu forwards <b>every</b> call — your phone won't ring at all. Use the carrier code above instead if you want your phone to ring first.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Turn her off</h2>
+    <p class="lead">Any time. Takes five seconds and your line goes straight back to normal.</p>
+    <div class="grid2">
+      <div>
+        <b style="font-size:.85rem">T-Mobile / AT&amp;T</b>
+        <span class="code">##61#</span>
+        <a class="dial off" href="tel:##61%23">Tap to turn off</a>
+      </div>
+      <div>
+        <b style="font-size:.85rem">Verizon</b>
+        <span class="code">*73</span>
+        <a class="dial off" href="tel:*73">Tap to turn off</a>
+      </div>
+    </div>
+    <div class="why">On iPhone's menu, just toggle Call Forwarding off. Turning Sofia off does <b>not</b> stop her from calling your website leads — that keeps running.</div>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <ul>
+      <li>She tells people up front she's an <b>AI assistant</b>. No pretending.</li>
+      <li>Everything she books is marked <b>tentative</b> until you confirm it.</li>
+      <li>You get a text after every call with what she captured.</li>
+      <li>If someone asks to stop being contacted, she stops. Permanently.</li>
+      <li>Change your hours any time from your dashboard — no need to ask us.</li>
+    </ul>
+  </div>
+
+  <footer>Questions? Call or text Robert — RG Automations.</footer>
+</div>
+
+<script>
+// One place to change the number. Later this comes from the client's record.
+const SOFIA = "+15055202840";
+const pretty = "(" + SOFIA.slice(2,5) + ") " + SOFIA.slice(5,8) + "-" + SOFIA.slice(8);
+const bare = SOFIA.slice(1);            // 15055202840
+
+document.getElementById("sofiaNum").textContent = pretty;
+document.getElementById("ipNum").textContent = pretty;
+
+// **61* = forward ONLY when unanswered · *11 = voice · *20# = ring 20s first
+const gsmCode = "**61*" + bare + "*11*20#";
+const vzCode  = "*71" + bare;
+document.getElementById("gsmOn").textContent = gsmCode;
+document.getElementById("vzOn").textContent  = vzCode;
+document.getElementById("gsmOnLink").href = "tel:" + encodeURIComponent(gsmCode);
+document.getElementById("vzOnLink").href  = "tel:" + encodeURIComponent(vzCode);
+
+function pick(id, btn){
+  document.querySelectorAll(".pane").forEach(p=>p.style.display="none");
+  document.getElementById(id).style.display="block";
+  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("on"));
+  btn.classList.add("on");
+}
+</script>
+</body>
+</html>
