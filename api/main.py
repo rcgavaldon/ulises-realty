@@ -379,7 +379,7 @@ def api():
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api", "rev": "v9-crm"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "v10-clientlink"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.
@@ -639,7 +639,7 @@ def api():
 
     @web.get("/admin/raffle")
     def admin_raffle(req: Request):
-        if req.headers.get("x-admin-token") != os.environ.get("CRON_TOKEN"):
+        if _role(req) != "owner":
             return JSONResponse({"error": "forbidden"}, status_code=403)
         return {"entries": (state.get("raffle", []) or [])[::-1]}
 
@@ -1107,9 +1107,20 @@ def api():
         except Exception as e:
             return {"result": f"Couldn't check availability ({str(e)[:60]}). Take their preferred time and Ulises will confirm."}
 
-    # ── admin panel (token-guarded; page lives at /admin.html on the site) ───
+    # ── dashboard auth ───────────────────────────────────────────────────────
+    # Two levels: the OWNER token (also the cron key — never hand this out) and
+    # a per-CLIENT token, so each agent gets their own long link that shows
+    # their pipeline and lets them set their hours, but nothing operational.
+    def _role(req: Request):
+        tok = req.headers.get("x-admin-token") or ""
+        if tok and tok == os.environ.get("CRON_TOKEN"):
+            return "owner"
+        if tok and tok == (state.get("settings", {}) or {}).get("client_token"):
+            return "client"
+        return None
+
     def _admin_ok(req: Request) -> bool:
-        return req.headers.get("x-admin-token") == os.environ.get("CRON_TOKEN")
+        return _role(req) is not None
 
     @web.get("/admin/overview")
     def admin_overview(req: Request):
@@ -1144,7 +1155,9 @@ def api():
                      "fail_note": state.get("spark_fail_note", "")},
             "sierra": {"configured": bool(os.environ.get("SIERRA_API_KEY")),
                        "fail_note": state.get("sierra_fail_note", "")},
-            "settings": _settings(),
+            "role": _role(req),
+            "settings": {k: v for k, v in _settings().items()
+                         if _role(req) == "owner" or k not in ("cal_id", "client_token")},
         }
 
     @web.post("/admin/settings")
@@ -1165,7 +1178,7 @@ def api():
                     s[k] = max(5, min(120, int(body[k])))
                 except (TypeError, ValueError):
                     pass
-        if "cal_id" in body:
+        if "cal_id" in body and _role(req) == "owner":
             s["cal_id"] = str(body["cal_id"]).strip()[:120]
         state["settings"] = s
         return {"ok": True, "settings": _settings()}
