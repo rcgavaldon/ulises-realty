@@ -39,6 +39,8 @@
   #panel{display:none}
   .saved{color:var(--ok);font-size:.8rem;font-weight:700;margin-left:10px}
   .scroll{overflow-x:auto}
+  .hide{display:none}
+  tbody tr:hover{background:#fcfaf5}
 </style>
 </head>
 <body>
@@ -58,6 +60,10 @@
 
 <div class="wrap" id="panel">
   <div class="grid">
+    <div class="card">
+      <h2>Right Now</h2>
+      <div class="stat-row" id="pipeline"></div>
+    </div>
     <div class="card">
       <h2>This Week</h2>
       <div class="stat-row" id="stats"></div>
@@ -93,8 +99,8 @@
   </div>
 
   <div class="card scroll" style="margin-top:18px">
-    <h2>Recent Leads</h2>
-    <table><thead><tr><th>Level</th><th>When</th><th>Name</th><th>Phone</th><th>Wants</th><th>Pre-qual</th><th>Now</th><th>Move</th><th>Property</th></tr></thead><tbody id="leads"></tbody></table>
+    <h2>Leads &amp; Call Status <span style="text-transform:none;letter-spacing:0;color:var(--muted)">— click a row for the call history</span></h2>
+    <table><thead><tr><th>Status</th><th>Level</th><th>Name</th><th>Phone</th><th>Wants</th><th>Next / Booked</th><th>In</th><th>Details</th></tr></thead><tbody id="leads"></tbody></table>
   </div>
 
   <div class="card scroll" style="margin-top:18px">
@@ -171,9 +177,50 @@ async function load(){
   const lvl = v => v==="hot" ? `<span class="tag" style="background:#fdecea;border-color:#f5c6bd;color:#b3402e">🔥 HOT</span>`
     : v==="warm" ? `<span class="tag" style="background:#fff8e1;border-color:#eadfa8;color:#8a6d00">warm</span>`
     : `<span class="tag">cold</span>`;
-  document.getElementById("leads").innerHTML = (d.leads||[]).map(l=>
-    `<tr><td>${lvl(l.level)}</td><td>${fmtTs(l.ts)}</td><td>${esc(l.name)}</td><td>${esc(l.phone)}</td><td><span class="tag">${esc(l.interest)}</span> ${l.lang==="es"?"🇲🇽":""}</td><td>${esc(l.prequalified)||"—"}</td><td>${esc(l.own_rent)||"—"}</td><td>${esc(l.move_date)||"—"}</td><td>${esc(l.address)||"—"}</td></tr>`
-  ).join("") || `<tr><td colspan="9" style="color:var(--muted)">No leads yet.</td></tr>`;
+
+  const STY = {
+    booked:   "background:#eaf6ef;border-color:#bfe2cd;color:#12603d",
+    connected:"background:#e8f1fb;border-color:#c2d8ef;color:#1c4f86",
+    no_answer:"background:#fff4e5;border-color:#f0d9a8;color:#a35c00",
+    calling:  "background:#f3e8fd;border-color:#dcc6f5;color:#5b2a86",
+    gave_up:  "background:#f2f2f2;border-color:#ddd;color:#666",
+    opted_out:"background:#fdecea;border-color:#f5c6bd;color:#b3402e",
+  };
+  const clock = t => t ? new Date(t*1000).toLocaleString("en-US",
+      {weekday:"short",hour:"numeric",minute:"2-digit"}) : "";
+  const ORD = ["","1st","2nd","3rd","4th","5th"];
+
+  // pipeline roll-up
+  const p = d.pipeline||{};
+  const pipeEl = document.getElementById("pipeline");
+  if(pipeEl) pipeEl.innerHTML =
+    `<div class="stat"><b>${p.awaiting_callback||0}</b><span>awaiting callback</span></div>
+     <div class="stat"><b>${p.spoke_not_booked||0}</b><span>spoke, not booked</span></div>
+     <div class="stat"><b>${p.booked||0}</b><span>booked</span></div>`;
+
+  document.getElementById("leads").innerHTML = (d.leads||[]).map((l,i)=>{
+    const st = l.status||"";
+    const pill = `<span class="tag" style="${STY[st]||''}">${esc(l.status_label||"New")}</span>`;
+    let next = "—";
+    if(st==="booked" && l.booked_for) next = "📅 " + esc(l.booked_for);
+    else if(st==="no_answer" && l.next_at) next = `${ORD[l.attempts]||l.attempts} try · ${clock(l.next_at)}`;
+    else if(st==="calling") next = "dialing…";
+    else if(st==="gave_up") next = `stopped after ${l.attempts}`;
+    const hist = (l.calls||[]).map(c=>{
+      const bits = [clock(c.ts), c.outcome + (c.seconds?` (${c.seconds}s)`:"")];
+      if(c.attempt) bits.push(`try ${c.attempt}`);
+      if(c.summary) bits.push(esc(c.summary));
+      if(c.recording) bits.push(`<a href="${c.recording}" target="_blank" rel="noopener">recording</a>`);
+      return `<div style="padding:3px 0;border-bottom:1px dashed var(--line)">${bits.join(" · ")}</div>`;
+    }).join("") || `<div style="color:var(--muted)">No calls logged yet.</div>`;
+    return `<tr onclick="document.getElementById('h${i}').classList.toggle('hide')" style="cursor:pointer">
+      <td>${pill}${l.demo?' <span class="tag">demo</span>':''}</td><td>${lvl(l.level)}</td>
+      <td>${esc(l.name)}</td><td>${esc(l.phone)}</td>
+      <td><span class="tag">${esc(l.interest)}</span> ${l.lang==="es"?"🇲🇽":""}</td>
+      <td>${next}</td><td>${fmtTs(l.ts)}</td>
+      <td>${esc(l.address)||esc(l.move_date)||"—"}</td></tr>
+    <tr id="h${i}" class="hide"><td colspan="8" style="background:var(--paper);font-size:.78rem">${hist}</td></tr>`;
+  }).join("") || `<tr><td colspan="8" style="color:var(--muted)">No leads yet.</td></tr>`;
 
   document.getElementById("bookings").innerHTML = (d.bookings||[]).map(b=>
     `<tr><td>${esc((b.start||"").replace("T"," ").slice(0,16))}</td><td>${esc(b.name)}</td><td>${esc(b.phone)}</td><td><span class="tag">${esc(b.purpose)}</span></td><td>${esc(b.property)||"—"}</td></tr>`

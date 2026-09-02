@@ -39,7 +39,7 @@ state = modal.Dict.from_name("ulises-realty-state", create_if_missing=True)
 
 TZ = "America/Denver"          # El Paso is Mountain Time
 QUIET_START, QUIET_END = 9, 20  # only dial 9:00-19:59 local
-RETRY_STEPS_MIN = [5, 60]       # attempt2 +5min, attempt3 +60min; attempt4 = next 9:15am
+RETRY_STEPS_MIN = [5, 30, 60]   # attempt2 +5min, attempt3 +30min, attempt4 +60min
 MAX_ATTEMPTS = 4                # 1 initial + 3 redials
 
 NO_ANSWER_REASONS = {
@@ -227,6 +227,39 @@ def _open_slots(day_dt, limit=3, demo=False):
     return out
 
 
+
+# ── lead lifecycle: one record per lead, so the dashboard can answer
+# "who did Sofia call, what happened, and what's still pending?" ────────────
+STATUS_LABEL = {
+    "calling": "Calling now", "no_answer": "No answer", "connected": "Spoke with them",
+    "booked": "Booked", "gave_up": "Gave up", "opted_out": "Opted out",
+}
+
+
+def _touch_lead(phone: str, **updates):
+    """Merge fields into the stored lead. Safe if the lead doesn't exist."""
+    if not phone:
+        return
+    lead = state.get(f"lead:{phone}", None)
+    if lead is None:
+        return
+    lead.update(updates)
+    state[f"lead:{phone}"] = lead
+
+
+def _log_call(phone: str, **event):
+    """Append one call outcome to the lead's history (kept to last 20)."""
+    if not phone:
+        return
+    lead = state.get(f"lead:{phone}", None)
+    if lead is None:
+        return
+    calls = lead.get("calls", [])
+    calls.append({"ts": time.time(), **event})
+    lead["calls"] = calls[-20:]
+    state[f"lead:{phone}"] = lead
+
+
 def _lead_level(lead: dict) -> str:
     """hot / warm / cold — an expected move date is the strongest intent signal."""
     score = 0
@@ -346,7 +379,7 @@ def api():
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api", "rev": "v8-spark-live"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "v9-crm"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.
@@ -488,6 +521,7 @@ def api():
             "move_date": str(body.get("move_date", "")).strip()[:20],
             "demo": demo,
             "ts": time.time(),
+            "status": "calling", "attempts": 1, "next_at": None, "calls": [],
         }
 
         # rate limit: 3 calls/phone/hr, 30/day global
@@ -517,6 +551,8 @@ def api():
                                  demo=demo)
             if label:
                 _bump_stat("leads")
+                _touch_lead(phone, status="booked", attempts=0, next_at=None,
+                            booked_for=label)
                 from datetime import datetime as _dt
                 from zoneinfo import ZoneInfo as _Z
                 _st = _dt.fromisoformat(slot_iso)
@@ -719,9 +755,16 @@ def api():
                     retries.pop(phone, None)
                     state["retries"] = retries
                 _bump_stat("connected")
+                _log_call(phone, outcome="connected", seconds=dur,
+                          direction=call.get("direction", "outbound"))
+                cur = state.get(f"lead:{phone}", {}).get("status")
+                if cur != "booked":
+                    _touch_lead(phone, status="connected", next_at=None)
             elif call.get("direction") != "inbound" and phone:
                 plan = retries.get(phone, {"attempts": 1, "texted": False})
                 lead_rec = state.get(f"lead:{phone}", {"phone": phone, "lang": "en", "name": ""})
+                _log_call(phone, outcome="no_answer", seconds=dur, reason=reason,
+                          attempt=plan.get("attempts", 1))
                 if not plan.get("texted"):
                     if lead_rec.get("lang") == "es":
                         _sms(phone, f"Hola {lead_rec.get('name','')}, soy Sofía, asistente de Ulises Ortega Bienes Raíces. Le llamé por su solicitud en la página — llame o mande texto a este número cuando guste. Responda STOP para no ser contactado.")
@@ -736,9 +779,13 @@ def api():
                     plan["next_at"] = nxt
                     retries[phone] = plan
                     state["retries"] = retries
+                    _touch_lead(phone, status="no_answer",
+                                attempts=plan["attempts"], next_at=nxt)
                 else:
                     retries.pop(phone, None)
                     state["retries"] = retries
+                    _touch_lead(phone, status="gave_up", next_at=None,
+                                attempts=plan["attempts"])
                     _sms_owner(f"📵 ULISES DEMO: no answer after {MAX_ATTEMPTS} tries — {lead_rec.get('name','?')} {phone}. Left SMS.")
             return {"ok": True}
 
@@ -750,6 +797,7 @@ def api():
                 retries = state.get("retries", {})
                 retries.pop(phone, None)
                 state["retries"] = retries
+                _touch_lead(phone, status="opted_out", next_at=None)
                 _sms_owner(f"🚫 ULISES DEMO: {phone} asked not to be contacted. Honored.")
                 return {"ok": True}
             dur = int((call.get("duration_ms") or 0) / 1000)
@@ -765,6 +813,11 @@ def api():
             rec = call.get("recording_url")
             if rec:
                 lines.append(f"Rec: {rec}")
+            _log_call(phone, outcome="summary", seconds=dur,
+                      summary=summary[:400], recording=rec or "",
+                      fields={k: (custom.get(k) or "") for k in
+                              ("areas", "budget", "preapproved", "timeline",
+                               "callback_time", "must_haves") if custom.get(k)})
             try:
                 import sierra_client
                 sierra_client.add_call_note(phone, "\n".join(lines))
@@ -1010,6 +1063,8 @@ def api():
             body["end"] = {"dateTime": end.isoformat(), "timeZone": TZ}
             svc.events().insert(calendarId=_cal_id(demo), body=body).execute()
             _bump_stat("booked")
+            _touch_lead(phone, status="booked", next_at=None,
+                        booked_for=start.strftime("%a %b %d %I:%M %p"))
             bookings = state.get("bookings", [])
             bookings.append({"ts": time.time(), "start": start.isoformat(), "name": name,
                              "phone": phone,
@@ -1068,11 +1123,19 @@ def api():
             if l:
                 row = {k: l.get(k, "") for k in
                        ("name", "phone", "interest", "lang", "address",
-                        "prequalified", "own_rent", "move_date", "ts")}
+                        "prequalified", "own_rent", "move_date", "ts",
+                        "status", "attempts", "next_at", "booked_for", "demo")}
                 row["level"] = _lead_level(l)
+                row["calls"] = (l.get("calls") or [])[-6:][::-1]
+                row["status_label"] = STATUS_LABEL.get(l.get("status", ""), "New")
                 leads.append(row)
         cache = state.get("listings_cache", {}) or {}
+        pending = [l for l in leads if l.get("status") in ("calling", "no_answer")]
+        spoke_unbooked = [l for l in leads if l.get("status") == "connected"]
         return {
+            "pipeline": {"awaiting_callback": len(pending),
+                         "spoke_not_booked": len(spoke_unbooked),
+                         "booked": len([l for l in leads if l.get("status") == "booked"])},
             "week": state.get(f"stats:{wk[0]}-w{wk[1]}", {}),
             "leads": leads,
             "bookings": (state.get("bookings", []) or [])[-20:][::-1],
@@ -1177,6 +1240,8 @@ def retry_worker():
         retries[phone] = plan
         changed = True
         status = _place_call(lead_rec)
+        _touch_lead(phone, status="calling", attempts=plan["attempts"])
+        _log_call(phone, outcome="dialing", attempt=plan["attempts"])
         _bump_stat("calls_placed")
         print(f"RETRY attempt {plan['attempts']} -> {phone}: {status}")
     if changed:
