@@ -39,6 +39,13 @@
   #panel{display:none}
   .saved{color:var(--ok);font-size:.8rem;font-weight:700;margin-left:10px}
   .scroll{overflow-x:auto}
+  .hdr-links{display:flex;gap:16px;flex-wrap:wrap;font-size:.82rem;font-weight:600}
+  .hdr-links a{color:var(--gold-soft);text-decoration:none}
+  .hdr-links a:hover{color:#fff}
+  .qlink{display:inline-block;background:var(--paper);border:1.5px solid var(--line);
+         border-radius:999px;padding:10px 18px;font-weight:700;font-size:.85rem;
+         color:var(--ink);text-decoration:none}
+  .qlink:hover{background:var(--navy);color:#fff;border-color:var(--navy)}
   .hide{display:none}
   tbody tr:hover{background:#fcfaf5}
 </style>
@@ -47,7 +54,11 @@
 
 <header>
   <h1>ULISES REALTY <b>·</b> CONTROL PANEL</h1>
-  <div style="font-size:.75rem;opacity:.75">RG Automations · internal</div>
+  <nav class="hdr-links">
+    <a href="./" target="_blank">My Website ↗</a>
+    <a href="setup.html" target="_blank">Phone Setup ↗</a>
+    <a href="#" onclick="signOut();return false">Sign out</a>
+  </nav>
 </header>
 
 <div class="wrap" id="login">
@@ -103,6 +114,16 @@
     <table><thead><tr><th>Status</th><th>Level</th><th>Name</th><th>Phone</th><th>Wants</th><th>Next / Booked</th><th>In</th><th>Details</th></tr></thead><tbody id="leads"></tbody></table>
   </div>
 
+  <div class="card" style="margin-top:18px">
+    <h2>Your Links</h2>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <a class="qlink" href="./" target="_blank">🌐 Your website</a>
+      <a class="qlink" href="setup.html" target="_blank">📞 Turn Sofia on / off</a>
+      <a class="qlink" href="privacy.html" target="_blank">🔒 Privacy page</a>
+    </div>
+    <p class="note">Bookmark this dashboard — everything lives here.</p>
+  </div>
+
   <div class="card scroll" style="margin-top:18px">
     <h2>Appointments Booked by Sofia</h2>
     <table><thead><tr><th>Slot</th><th>Name</th><th>Phone</th><th>Purpose</th><th>Property</th></tr></thead><tbody id="bookings"></tbody></table>
@@ -126,22 +147,35 @@ async function api(path, opts={}){
   return r.json();
 }
 
-async function unlock(){
-  TOKEN = document.getElementById("tok").value.trim();
+async function unlock(tok){
+  // tok is passed by the magic link; only fall back to the input box when a
+  // human actually typed one. (This clobbering the URL token was the bug.)
+  TOKEN = (tok !== undefined && tok !== null && tok !== "")
+    ? tok : document.getElementById("tok").value.trim();
+  if(!TOKEN){ return; }
   try{
     await load();
     try{ localStorage.setItem("ur_admin_tok", TOKEN); }catch(e){}
     document.getElementById("login").style.display="none";
     document.getElementById("panel").style.display="block";
-  }catch(e){ alert("Wrong token."); }
+  }catch(e){
+    document.getElementById("login").style.display="block";
+    document.getElementById("panel").style.display="none";
+    alert("That link or token isn't valid.");
+  }
+}
+
+function signOut(){
+  try{ localStorage.removeItem("ur_admin_tok"); }catch(e){}
+  location.reload();
 }
 
 function esc(s){ const d=document.createElement("div"); d.textContent=s??""; return d.innerHTML; }
 function fmtTs(t){ return t? new Date(t*1000).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}) : "—"; }
 
 async function load(){
-  loadRaffle();
   const d = await api("/admin/overview");
+  if(d.role === "owner") loadRaffle();
   const w = d.week||{};
   document.getElementById("stats").innerHTML = [
     ["leads","Leads in"],["calls_placed","Calls placed"],["connected","Connected"],
@@ -269,7 +303,7 @@ async function saveSettings(){
   const m = document.getElementById("savedMsg"); m.textContent="✓ saved"; setTimeout(()=>m.textContent="",2500);
 }
 
-if(TOKEN){ unlock(); document.getElementById("tok").value = TOKEN; }
+if(TOKEN){ document.getElementById("tok").value = TOKEN; unlock(TOKEN); }
 </script>
 </body>
 </html>
