@@ -118,8 +118,9 @@ SELLING / HOME VALUE:
    "consult", property = their address). Phone call, not in-person. This is
    the goal of the call.
 
-JUST QUESTIONS (inbound): answer what you can, capture name + what they need, offer
-to have Ulises call them, and ask the best time.
+JUST QUESTIONS (inbound): answer what you can, capture their first and last name +
+what they need, offer to have Ulises call them, and ask the best time. Do NOT ask
+them to spell out an email address on the phone — a text after the call collects it.
 
 ## Wrap-up
 Recap in one sentence what you captured, confirm when Ulises will call (or the booked
@@ -294,6 +295,20 @@ OPT_OUT_FIELD = {"type": "string", "name": "opt_out",
                  "description": "true ONLY if the caller asked not to be called/texted again or to be removed from contact",
                  "examples": ["true", "false"]}
 
+# Lets a cold caller become a CRM lead: name + intent from the call, and any
+# email they happened to say (a text asks them to confirm it — never trusted raw).
+EXTRA_FIELDS = [
+    {"type": "string", "name": "caller_name",
+     "description": "The caller's full name as they gave it, or 'unknown' if they never said",
+     "examples": ["Maria Gonzalez", "unknown"]},
+    {"type": "string", "name": "email_spoken",
+     "description": "An email address the caller said out loud, written as an address, or 'none'",
+     "examples": ["maria.g@gmail.com", "none"]},
+    {"type": "string", "name": "intent",
+     "description": "What they want: one of buy, sell, buysell, rent, value, other",
+     "examples": ["buy", "sell", "rent"]},
+]
+
 for llm_id, begin in [(_env("LLM_EN"), BEGIN_EN), (_env("LLM_ES"), BEGIN_ES)]:
     req("PATCH", f"/update-retell-llm/{llm_id}",
         {"general_prompt": PROMPT, "begin_message": begin, "general_tools": TOOLS})
@@ -302,8 +317,9 @@ for llm_id, begin in [(_env("LLM_EN"), BEGIN_EN), (_env("LLM_ES"), BEGIN_ES)]:
 for agent_id in [_env("AGENT_EN"), _env("AGENT_ES")]:
     a = req("GET", f"/get-agent/{agent_id}")
     fields = a.get("post_call_analysis_data") or []
-    if not any(f.get("name") == "opt_out" for f in fields):
-        fields.append(OPT_OUT_FIELD)
+    for new in [OPT_OUT_FIELD, *EXTRA_FIELDS]:
+        if not any(f.get("name") == new["name"] for f in fields):
+            fields.append(new)
     req("PATCH", f"/update-agent/{agent_id}", {"post_call_analysis_data": fields})
     print("Agent updated:", agent_id)
 

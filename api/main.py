@@ -20,6 +20,7 @@ Secret:  ulises-realty (RETELL_API_KEY, TELNYX_API_KEY, AGENT_EN, AGENT_ES,
 State:   modal.Dict 'ulises-realty-state'
          keys: lead:<phone>, retries (one dict phone->plan), optout:<phone>, stats:<iso-week>
 """
+import asyncio
 import json
 import os
 import time
@@ -46,6 +47,14 @@ NO_ANSWER_REASONS = {
     "dial_no_answer", "dial_busy", "dial_failed", "no_answer",
     "voicemail_reached", "machine_detected",
 }
+
+# Missing-email follow-up (Sierra won't take a lead without one). Phone callers
+# and old cached forms are the only way a lead arrives without it.
+EMAIL_RE = __import__("re").compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+YES_WORDS = {"yes", "y", "yes.", "si", "sí", "correct", "correcto", "yep", "yeah"}
+EMAIL_REMIND_AFTER = 20 * 3600   # one reminder, next working morning at the earliest
+EMAIL_GIVEUP_AFTER = 72 * 3600   # then stop asking and tell the owner
+LEAD_FRESH_DAYS = 90             # older than this, a caller's number may be someone else's now
 
 
 def _now_local():
@@ -80,8 +89,68 @@ def _sms(to: str, text: str):
         return False
 
 
+def _owner_cells() -> list[str]:
+    """Where lead alerts go: the agent's cell from settings (set from the
+    dashboard), else OWNER_CELL in the secret; plus an optional cc while
+    someone else is watching the rollout."""
+    s = state.get("settings", {}) or {}
+    cells = [s.get("owner_cell") or os.environ["OWNER_CELL"]]
+    if s.get("cc_cell") and s["cc_cell"] not in cells:
+        cells.append(s["cc_cell"])
+    return cells
+
+
 def _sms_owner(text: str):
-    _sms(os.environ["OWNER_CELL"], text)
+    for cell in _owner_cells():
+        _sms(cell, text)
+
+
+def _retell_signed(raw: bytes, sig: str) -> bool:
+    """Retell signs every webhook: x-retell-signature = "v=<ms>,d=<hex>" where
+    hex = HMAC-SHA256(api_key, raw_body + ms), valid for 5 minutes. Same scheme
+    the retell-sdk verifier implements; done inline so an SDK refactor can't
+    break it."""
+    import hashlib
+    import hmac
+    import re as _re
+    key = os.environ.get("RETELL_API_KEY", "")
+    m = _re.search(r"v=(\d+),d=([0-9a-fA-F]+)", sig or "")
+    if not key or not m:
+        return False
+    ts, digest = m.group(1), m.group(2).lower()
+    if abs(int(time.time() * 1000) - int(ts)) > 5 * 60 * 1000:
+        return False
+    try:
+        want = hmac.new(key.encode(), (raw.decode("utf-8") + ts).encode(), hashlib.sha256).hexdigest()
+    except Exception:
+        return False
+    return hmac.compare_digest(want, digest)
+
+
+def _alert_once(key: str, text: str, every: int = 6 * 3600):
+    """Owner alert that can't spam: at most once per `every` seconds per key."""
+    last = state.get(f"alert:{key}", 0) or 0
+    if time.time() - last > every:
+        state[f"alert:{key}"] = time.time()
+        _sms_owner(text)
+
+
+def _bump_sig(ok: bool):
+    """Count signed vs unsigned Retell events so the first real call after a
+    deploy proves the key is right (shown on the admin overview)."""
+    s = state.get("retell_sig", {}) or {}
+    k = "ok" if ok else "bad"
+    s[k] = int(s.get(k, 0)) + 1
+    s[f"last_{k}_ts"] = time.time()
+    state["retell_sig"] = s
+
+
+def _sierra_configured() -> bool:
+    try:
+        import sierra_client
+        return sierra_client.configured()
+    except Exception:
+        return False
 
 
 def _blocked(phone: str) -> str | None:
@@ -352,7 +421,10 @@ INTEREST = {
     secrets=[modal.Secret.from_name("ulises-realty"),
              # Spark/Flexmls lives in its own secret so the main one is never
              # rewritten (and risk losing a key) just to rotate an MLS token.
-             modal.Secret.from_name("ulises-spark")],
+             modal.Secret.from_name("ulises-spark"),
+             # Sierra CRM key + Ulises's agent id: own secret for the same
+             # reason. Dormant until it holds SIERRA_API_KEY + SIERRA_AGENT_ID.
+             modal.Secret.from_name("ulises-sierra")],
     region="us-east",
 )
 @modal.asgi_app()
@@ -379,7 +451,7 @@ def api():
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api", "rev": "v10-clientlink"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "v11-sierra"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.
@@ -388,6 +460,11 @@ def api():
         if req.headers.get("x-cron-token") != os.environ.get("CRON_TOKEN"):
             return JSONResponse({"error": "forbidden"}, status_code=403)
         retry_worker()
+        email_followup_worker()
+        try:
+            _sierra_retry_tick()
+        except Exception as e:
+            print(f"sierra retry tick failed: {e}")
         return {"ok": True}
 
     @web.post("/cron/weekly")
@@ -477,6 +554,115 @@ def api():
         except Exception:
             return None
 
+    def _sierra_push(lead_rec: dict) -> str:
+        """Website/phone lead -> Sierra under Ulises, at most ONCE per lead.
+        Never for demo leads. Stores Sierra's leadId only when Sierra confirmed
+        the lead landed on Ulises, so a call note can never reach another
+        agent's lead. Returns the one-line status for the owner's SMS card
+        ("" when Sierra is off). Blocking: call it via asyncio.to_thread."""
+        try:
+            import sierra_client
+        except Exception:
+            return ""
+        phone = lead_rec.get("phone", "")
+        if lead_rec.get("demo") or not sierra_client.configured():
+            return ""
+        cur = state.get(f"lead:{phone}", {}) or {}
+        if cur.get("sierra_lead_id"):
+            return sierra_client.describe({"status": "already", "lead_id": cur["sierra_lead_id"]})
+        if cur.get("sierra_status") == "inflight" and \
+                time.time() - float(cur.get("sierra_inflight_ts") or 0) < 120:
+            return sierra_client.describe({"status": "inflight"})   # double-submit
+        _touch_lead(phone, sierra_status="inflight", sierra_inflight_ts=time.time())
+        try:
+            res = sierra_client.push_lead(lead_rec)
+        except Exception as e:
+            sierra_client._note_fail(f"push: {str(e)[:120]}")
+            res = {"status": "error"}
+        upd = {"sierra_status": res.get("status") or "error"}
+        if res.get("status") == "sent":
+            upd["sierra_lead_id"] = res["lead_id"]
+            upd["sierra_created_ts"] = time.time()
+        elif res.get("status") == "error":
+            # Sierra down / timeout: the cron tick tries again (max 3).
+            upd["sierra_attempts"] = int(cur.get("sierra_attempts") or 0) + 1
+            q = [p for p in (state.get("sierra_retry", []) or []) if p != phone]
+            q.append(phone)
+            state["sierra_retry"] = q[-100:]
+        elif res.get("status") == "wrong_agent":
+            upd["sierra_misrouted_id"] = res.get("lead_id")   # kept for the owner; never used for notes
+        _touch_lead(phone, **upd)
+        return sierra_client.describe(res)
+
+    def _sierra_retry_tick():
+        """Cron: re-push leads whose Sierra create failed (Sierra down,
+        timeout). Up to 3 tries per lead, then the owner adds it by hand."""
+        q = state.get("sierra_retry", []) or []
+        if not q:
+            return
+        done = set()
+        for ph in q:
+            l = state.get(f"lead:{ph}", None) or {}
+            if not l or l.get("sierra_lead_id") or l.get("demo") or _blocked(ph) \
+                    or l.get("sierra_status") not in ("error", "inflight"):
+                done.add(ph)
+                continue
+            if int(l.get("sierra_attempts") or 0) >= 3:
+                done.add(ph)
+                _sms_owner(f"⚠️ SIERRA: couldn't add {l.get('name') or 'lead'} {ph} after 3 tries. "
+                           "Add them by hand.")
+                continue
+            line = _sierra_push(l)
+            l2 = state.get(f"lead:{ph}", {}) or {}
+            if l2.get("sierra_status") != "error":
+                done.add(ph)
+                if line:
+                    _sms_owner(f"🔁 SIERRA retry: {l.get('name') or 'lead'} {ph}\n{line}")
+        if done:
+            cur = state.get("sierra_retry", []) or []
+            state["sierra_retry"] = [p for p in cur if p not in done]
+
+    def _spoken_email(s: str) -> str:
+        """'john dot doe at gmail dot com' -> john.doe@gmail.com, else ''."""
+        t = (s or "").strip().lower()
+        for a, b in ((" at ", "@"), (" dot ", "."), (" underscore ", "_"), (" dash ", "-"), (" ", "")):
+            t = t.replace(a, b)
+        return t if EMAIL_RE.fullmatch(t) else ""
+
+    def _ask_email(lead: dict, heard: str = ""):
+        """No email on file -> one text asking for it. Typed by them, so it's
+        right; if Sofia heard one on the call, ask them to confirm it."""
+        phone, name = lead["phone"], lead.get("name") or ""
+        cand = _spoken_email(heard)
+        if lead.get("lang") == "es":
+            msg = f"Hola {name}, " if name else "Hola, "
+            msg += "soy Sofía, asistente de Ulises Ortega. "
+            msg += (f"Tenemos su correo como {cand}. Responda SÍ si es correcto, o envíe el correcto. "
+                    if cand else
+                    "Responda con su correo electrónico para que Ulises le mande propiedades y le dé seguimiento. ")
+            msg += "Responda STOP para no ser contactado."
+        else:
+            msg = f"Hi {name}, " if name else "Hi, "
+            msg += "this is Sofia, Ulises Ortega's assistant. "
+            msg += (f"We have your email as {cand}. Reply YES if that's right, or send the correct one. "
+                    if cand else
+                    "Reply with your email so Ulises can send you listings and follow up. ")
+            msg += "Reply STOP to opt out."
+        sent = _sms(phone, msg)
+        _touch_lead(phone, awaiting_email=True, email_candidate=cand,
+                    email_asked_ts=time.time(), email_nudges=0)
+        waiting = state.get("awaiting_email", []) or []
+        if phone not in waiting:
+            waiting.append(phone)
+            state["awaiting_email"] = waiting[-200:]
+        tag = " (DEMO: nothing goes to Sierra)" if lead.get("demo") else ""
+        if sent:
+            _sms_owner(f"⏳ MISSING EMAIL: {name or 'caller'} {phone} — texted them for it. "
+                       f"Goes to Sierra when they reply.{tag}")
+        else:
+            _sms_owner(f"⚠️ MISSING EMAIL: {name or 'caller'} {phone} — the text to them FAILED. "
+                       f"Get their email by hand.{tag}")
+
     # ── form submit ──────────────────────────────────────────────────────────
     @web.post("/lead")
     async def lead(req: Request):
@@ -497,6 +683,11 @@ def api():
         interest_key = str(body.get("interest", "other"))
         address = str(body.get("address", "")).strip()[:160]
         demo = bool(body.get("demo"))
+        # Sierra rejects malformed emails; a bad one goes the "no email" route
+        # (call still happens, owner told to add by hand) instead of a Sierra 4xx.
+        email = str(body.get("email", "")).strip().lower()[:120]
+        if not EMAIL_RE.fullmatch(email):
+            email = ""
 
         # If they ran the site's value tool, carry the numbers onto the call so
         # Sofia opens already knowing them.
@@ -513,7 +704,7 @@ def api():
             "interest": interest_key,
             "interest_desc": INTEREST.get(interest_key, INTEREST["other"])[lang],
             "message": str(body.get("message", "")).strip()[:300] or ("ninguno" if lang == "es" else "none"),
-            "email": str(body.get("email", "")).strip()[:120],
+            "email": email,
             "address": address,
             "valuation_line": valuation_line,
             "prequalified": str(body.get("prequalified", "")).strip()[:20],
@@ -536,6 +727,28 @@ def api():
         rl["day"].append(now)
         state["ratelimit"] = rl
 
+        # A resubmit by the SAME person must not orphan what already happened
+        # (the Sierra lead we created, the email they texted us). A different
+        # person on this number — a new email, or a record past the freshness
+        # window (numbers change hands) — starts clean, so nothing of the old
+        # person's can ever be attached to them.
+        prev = state.get(f"lead:{phone}", None) or {}
+        same_person = bool(prev) \
+            and time.time() - float(prev.get("ts") or 0) < LEAD_FRESH_DAYS * 86400 \
+            and (not email or not prev.get("email") or email == prev.get("email"))
+        if same_person:
+            for k in ("sierra_lead_id", "sierra_status", "sierra_inflight_ts", "sierra_misrouted_id",
+                      "sierra_created_ts", "sierra_attempts", "email_asked_ts", "awaiting_email",
+                      "email_candidate", "email_nudges", "email_nudged", "email_reminded_ts",
+                      "email_received_ts", "email_gave_up"):
+                if k in prev:
+                    lead_rec[k] = prev[k]
+            if prev.get("calls"):
+                lead_rec["calls"] = prev["calls"]
+            if not lead_rec["email"] and prev.get("email"):
+                lead_rec["email"] = prev["email"]
+        if lead_rec["email"]:
+            lead_rec["awaiting_email"] = False   # they just gave it on the form
         state[f"lead:{phone}"] = lead_rec
         idx = state.get("lead_index", [])
         if phone in idx:
@@ -572,13 +785,9 @@ def api():
                 card = [("🧪 DEMO BOOKING (demo calendar)" if demo
                          else "🗓️ ULISES SITE BOOKING (no insta-call)"), name, phone,
                         f"Phone call: {label}", f"Wants: {interest_key} · Lang: {lang.upper()}"]
-                if not demo:
-                    try:
-                        import sierra_client
-                        if sierra_client.push_lead(lead_rec):
-                            card.append("→ pushed to Sierra CRM")
-                    except Exception:
-                        pass
+                _sierra_line = await asyncio.to_thread(_sierra_push, lead_rec)
+                if _sierra_line:
+                    card.append(_sierra_line)
                 _sms_owner("\n".join(card))
                 return JSONResponse({"ok": True, "scheduled": label})
             # slot vanished -> fall through to the instant call so no lead is lost
@@ -601,12 +810,9 @@ def api():
             card.append(f"Ran value tool: {valuation_line}")
         card.append(f"Note: {lead_rec['message'][:120]}")
         card.append(f"Sofia call: {call_status[:80]}")
-        try:
-            import sierra_client
-            if sierra_client.push_lead(lead_rec):
-                card.append("→ pushed to Sierra CRM")
-        except Exception:
-            pass
+        _sierra_line = await asyncio.to_thread(_sierra_push, lead_rec)
+        if _sierra_line:
+            card.append(_sierra_line)
         _sms_owner("\n".join(card))
         return JSONResponse({"ok": True, "call": call_status})
 
@@ -705,15 +911,41 @@ def api():
         payload = (body.get("data") or {}).get("payload") or {}
         if payload.get("direction") != "inbound":
             return {"ok": True}
+        # No Telnyx signing key is configured, so at least insist the event is a
+        # received message addressed to THIS agent's number.
+        etype = (body.get("data") or {}).get("event_type")
+        if etype and etype != "message.received":
+            return {"ok": True}
+        ours = os.environ.get("FROM_NUMBER", "")
+        tos = [str(t.get("phone_number") or "") for t in (payload.get("to") or []) if isinstance(t, dict)]
+        if ours and tos and ours not in tos:
+            return {"ok": True}                  # a different number on the same profile
         frm = (payload.get("from") or {}).get("phone_number") or ""
         text = (payload.get("text") or "").strip()
-        word = text.lower().strip(" .!,").split()[0] if text else ""
+        # Telnyx re-delivers when we answer slower than ~2 s: act on each message once.
+        mid = str(payload.get("id") or "")
+        if mid:
+            seen = state.get("sms_seen", []) or []
+            if mid in seen:
+                return {"ok": True}
+            seen.append(mid)
+            state["sms_seen"] = seen[-300:]
+        toks = __import__("re").findall(r"[a-z0-9áéíóúñü]+", text.lower())
+        word = toks[0] if toks else ""
+        strong = {"stop", "stopall", "unsubscribe", "alto", "baja"}
+        low = text.lower()
+        wants_out = word in STOP_WORDS or any(t in strong for t in toks) \
+            or "opt out" in low or "optout" in low or "opt-out" in low
 
-        if word in STOP_WORDS:
+        if wants_out:
             state[f"optout:{frm}"] = True
             retries = state.get("retries", {})
             if retries.pop(frm, None) is not None:
                 state["retries"] = retries
+            _touch_lead(frm, awaiting_email=False)         # no email ask survives a STOP
+            waiting = state.get("awaiting_email", []) or []
+            if frm in waiting:
+                state["awaiting_email"] = [p for p in waiting if p != frm]
             _sms(frm, "You're unsubscribed and won't be contacted again. "
                       "Reply START if you ever change your mind.")
             _sms_owner(f"🚫 OPT-OUT honored: {frm}")
@@ -724,19 +956,80 @@ def api():
             _sms(frm, "You're re-subscribed. Reply STOP anytime.")
             return {"ok": True, "optin": True}
 
-        lead = state.get(f"lead:{frm}", {})
+        lead = state.get(f"lead:{frm}", {}) or {}
         who = lead.get("name") or "unknown"
+        fresh = bool(lead) and time.time() - float(lead.get("ts") or 0) < LEAD_FRESH_DAYS * 86400
+
+        # An email from a lead we don't have one for -> save it and send them to
+        # Sierra, whether we asked (the usual case) or they offered it. A typed
+        # address always wins over the one Sofia thought she heard.
+        if fresh and not lead.get("email") and not _blocked(frm):
+            m = EMAIL_RE.search(text)
+            email = m.group(0).lower() if m else ""
+            if not email and word in YES_WORDS and lead.get("awaiting_email"):
+                email = lead.get("email_candidate") or ""
+            if email:
+                _touch_lead(frm, email=email, awaiting_email=False, email_received_ts=time.time())
+                waiting = [p for p in (state.get("awaiting_email", []) or []) if p != frm]
+                state["awaiting_email"] = waiting
+                lead = state.get(f"lead:{frm}", {}) or {}
+                line = await asyncio.to_thread(_sierra_push, lead)
+                if lead.get("lang") == "es":
+                    _sms(frm, "¡Recibido, gracias! Ulises le dará seguimiento pronto. Responda STOP para no ser contactado.")
+                else:
+                    _sms(frm, "Got it, thank you! Ulises will follow up shortly. Reply STOP to opt out.")
+                if not line:
+                    line = "demo: would go to Sierra now" if lead.get("demo") else "Sierra: off"
+                _sms_owner(f"✅ EMAIL RECEIVED: {who} {frm} -> {email}\n{line}")
+                return {"ok": True, "email": True}
+            if lead.get("awaiting_email"):
+                if not lead.get("email_nudged"):
+                    _touch_lead(frm, email_nudged=True)
+                    _sms(frm, ("No encontré un correo en su mensaje — responda solo con su correo electrónico. Responda STOP para no ser contactado."
+                               if lead.get("lang") == "es" else
+                               "Sorry, I didn't see an email address in that — please reply with just your email. Reply STOP to opt out."))
+                _sms_owner(f"💬 TEXT from {who} {frm} (still no email):\n{text[:300]}")
+                return {"ok": True}
+
         _sms_owner(f"💬 TEXT from {who} {frm}:\n{text[:300]}")
         return {"ok": True}
 
     # ── Retell webhook ───────────────────────────────────────────────────────
     @web.post("/retell-webhook")
     async def retell_webhook(req: Request):
+        # This path now writes to the brokerage CRM, so only Retell may drive it.
+        raw = await req.body()
         try:
-            body = await req.json()
+            body = json.loads(raw)
         except Exception:
             return {"ok": True}
+        if not isinstance(body, dict) or "event" not in body or "call" not in body:
+            return {"ok": True}                  # not Retell-shaped: scanners, typos
+        # Only a Retell-signed event may write to the brokerage CRM or text a
+        # lead for their email. An unsigned Retell-shaped event still runs the
+        # existing call bookkeeping, so a key mix-up can never stop redials.
+        trusted = _retell_signed(raw, req.headers.get("x-retell-signature", ""))
+        had_ok = bool((state.get("retell_sig", {}) or {}).get("ok"))
+        _bump_sig(trusted)
+        if not trusted:
+            print(f"retell-webhook: no valid signature, event={body.get('event')}")
+            if had_ok:
+                # Retell has already proven it signs with our key, so anything
+                # unsigned from here on is not Retell. Drop it.
+                return {"ok": True}
+            _alert_once("retell_bad_sig",
+                        "⚠️ ULISES: a call event arrived without a valid Retell signature. "
+                        "Calls still work; Sierra notes and email texts are paused for it. Tell Robert.")
         event = body.get("event")
+        # Retell retries a slow webhook: act on each (call, event) once.
+        _cid = str((body.get("call") or {}).get("call_id") or "")
+        if _cid and event in ("call_ended", "call_analyzed"):
+            _seen = state.get("retell_seen", []) or []
+            _key = f"{_cid}:{event}"
+            if _key in _seen:
+                return {"ok": True}
+            _seen.append(_key)
+            state["retell_seen"] = _seen[-300:]
         call = body.get("call", {}) or {}
         meta = call.get("metadata") or {}
         if meta.get("source") != "ulises-realty" and call.get("direction") != "inbound":
@@ -765,7 +1058,7 @@ def api():
                 lead_rec = state.get(f"lead:{phone}", {"phone": phone, "lang": "en", "name": ""})
                 _log_call(phone, outcome="no_answer", seconds=dur, reason=reason,
                           attempt=plan.get("attempts", 1))
-                if not plan.get("texted"):
+                if not plan.get("texted") and not _blocked(phone) and state.get(f"lead:{phone}"):
                     if lead_rec.get("lang") == "es":
                         _sms(phone, f"Hola {lead_rec.get('name','')}, soy Sofía, asistente de Ulises Ortega Bienes Raíces. Le llamé por su solicitud en la página — llame o mande texto a este número cuando guste. Responda STOP para no ser contactado.")
                     else:
@@ -797,7 +1090,7 @@ def api():
                 retries = state.get("retries", {})
                 retries.pop(phone, None)
                 state["retries"] = retries
-                _touch_lead(phone, status="opted_out", next_at=None)
+                _touch_lead(phone, status="opted_out", next_at=None, awaiting_email=False)
                 _sms_owner(f"🚫 ULISES DEMO: {phone} asked not to be contacted. Honored.")
                 return {"ok": True}
             dur = int((call.get("duration_ms") or 0) / 1000)
@@ -818,11 +1111,43 @@ def api():
                       fields={k: (custom.get(k) or "") for k in
                               ("areas", "budget", "preapproved", "timeline",
                                "callback_time", "must_haves") if custom.get(k)})
-            try:
-                import sierra_client
-                sierra_client.add_call_note(phone, "\n".join(lines))
-            except Exception:
-                pass
+            # What the call taught us about someone we didn't have on file.
+            _known = state.get(f"lead:{phone}", {}) or {}
+            if trusted:          # only Retell-signed details may flow on to the CRM
+                _upd = {"last_summary": "\n".join(lines[1:])[:900]}
+                _cn = (custom.get("caller_name") or "").strip()
+                if _cn and _cn.lower() not in ("unknown", "n/a", "none") and not _known.get("name"):
+                    _upd["name"] = _cn[:80]
+                _it = (custom.get("intent") or "").strip().lower()
+                if _it in INTEREST and _it != "other" and _known.get("interest") in (None, "", "other"):
+                    _upd["interest"] = _it
+                    _upd["interest_desc"] = INTEREST[_it][_known.get("lang", "en")]
+                if _known:
+                    _touch_lead(phone, **_upd)
+                    _known.update(_upd)
+            # Call note goes ONLY to the Sierra lead we created for this phone
+            # AND that Sierra confirmed is on Ulises (never a search, never a
+            # misrouted one), and only while the record is fresh — a phone
+            # number can change hands.
+            # Unanswered dials also produce call_analyzed: those get no note and no ask.
+            _connected = dur >= 12 and \
+                (call.get("disconnection_reason") or "").lower() not in NO_ANSWER_REASONS
+            if trusted and _connected and _known.get("sierra_lead_id") \
+                    and _known.get("sierra_status") == "sent" and not _known.get("demo") \
+                    and time.time() - float(_known.get("sierra_created_ts") or _known.get("ts") or 0) \
+                    < LEAD_FRESH_DAYS * 86400:
+                try:
+                    import sierra_client
+                    if sierra_client.add_call_note(_known["sierra_lead_id"], "\n".join(lines)):
+                        lines.append(f"-> note added to Sierra #{_known['sierra_lead_id']}")
+                except Exception:
+                    pass
+            # No email on file (they phoned in) -> one text asking for it.
+            if trusted and _connected and _known and not _known.get("email") \
+                    and not _known.get("email_asked_ts") \
+                    and not _blocked(phone):
+                _ask_email(_known, custom.get("email_spoken") or "")
+                lines.append("-> no email on file: texted them for it")
             _sms_owner("\n".join(lines))
             return {"ok": True}
 
@@ -845,6 +1170,28 @@ def api():
         from_number = tp("From", "unknown")
         to_number = tp("To", os.environ["FROM_NUMBER"])
         known = state.get(f"lead:{from_number}", None)
+        if known is not None and time.time() - float(known.get("ts") or 0) > LEAD_FRESH_DAYS * 86400:
+            known = None   # stale: the number may belong to someone else by now
+        # A cold caller becomes a lead the moment Sofia picks up: the call
+        # summary, the email text, and the Sierra push all hang off this record.
+        # Only a real call hitting OUR number (Telnyx POSTs the TeXML webhook)
+        # may create a record; a GET with query params never does.
+        real_call = req.method == "POST" and \
+            to_number[-10:] == os.environ.get("FROM_NUMBER", "")[-10:]
+        if known is None and real_call and from_number.startswith("+") and not _blocked(from_number):
+            known = {
+                "phone": from_number, "name": "", "lang": "en",
+                "interest": "other", "interest_desc": INTEREST["other"]["en"],
+                "message": "none", "email": "", "address": "", "valuation_line": "",
+                "prequalified": "", "own_rent": "", "move_date": "",
+                # The owner's own phones calling in are tests: never Sierra.
+                "demo": from_number in _owner_cells(), "source": "inbound_call", "ts": time.time(),
+                "status": "connected", "attempts": 0, "next_at": None, "calls": [],
+            }
+            state[f"lead:{from_number}"] = known
+            idx = [p for p in (state.get("lead_index", []) or []) if p != from_number]
+            idx.append(from_number)
+            state["lead_index"] = idx[-500:]
         lang = (known or {}).get("lang", "en")
         agent_id = os.environ["AGENT_ES"] if lang == "es" else os.environ["AGENT_EN"]
         if known and known.get("name"):
@@ -862,7 +1209,7 @@ def api():
                 from_number=from_number,
                 to_number=to_number,
                 retell_llm_dynamic_variables={
-                    "name": (known or {}).get("name", "there"),
+                    "name": (known or {}).get("name") or "there",
                     "interest": (known or {}).get("interest_desc", "El Paso real estate"),
                     "message": (known or {}).get("message", "none"),
                     "call_language": "Spanish" if lang == "es" else "English",
@@ -880,7 +1227,10 @@ def api():
             _bump_stat("inbound")
             twiml = ('<?xml version="1.0" encoding="UTF-8"?>'
                      f'<Response><Dial><Sip>sip:{call.call_id}@sip.retellai.com</Sip></Dial></Response>')
-        except Exception:
+        except Exception as e:
+            # Never lose a caller silently.
+            _sms_owner(f"⚠️ ULISES: a call from {from_number} could not reach Sofia "
+                       f"({str(e)[:60]}). Call them back.")
             twiml = ('<?xml version="1.0" encoding="UTF-8"?>'
                      '<Response><Say>Thanks for calling Ulises Ortega Real Estate. '
                      'Please try again in a moment.</Say><Hangup/></Response>')
@@ -1135,7 +1485,8 @@ def api():
                 row = {k: l.get(k, "") for k in
                        ("name", "phone", "interest", "lang", "address",
                         "prequalified", "own_rent", "move_date", "ts",
-                        "status", "attempts", "next_at", "booked_for", "demo")}
+                        "status", "attempts", "next_at", "booked_for", "demo",
+                        "email", "source", "sierra_status", "sierra_lead_id", "awaiting_email")}
                 row["level"] = _lead_level(l)
                 row["calls"] = (l.get("calls") or [])[-6:][::-1]
                 row["status_label"] = STATUS_LABEL.get(l.get("status", ""), "New")
@@ -1153,7 +1504,9 @@ def api():
             "retry_queue": len(state.get("retries", {}) or {}),
             "feed": {"live": bool(cache.get("featured")), "synced_at": cache.get("ts"),
                      "fail_note": state.get("spark_fail_note", "")},
-            "sierra": {"configured": bool(os.environ.get("SIERRA_API_KEY")),
+            "retell_signatures": state.get("retell_sig", {}) or {},
+            "awaiting_email": len(state.get("awaiting_email", []) or []),
+            "sierra": {"configured": _sierra_configured(),
                        "fail_note": state.get("sierra_fail_note", "")},
             "role": _role(req),
             "settings": {k: v for k, v in _settings().items()
@@ -1180,8 +1533,39 @@ def api():
                     pass
         if "cal_id" in body and _role(req) == "owner":
             s["cal_id"] = str(body["cal_id"]).strip()[:120]
+        # Who gets the lead texts. Owner-only: this points automated texts at a person.
+        for k in ("owner_cell", "cc_cell"):
+            if k in body and _role(req) == "owner":
+                v = str(body[k] or "").strip()
+                s[k] = (norm_phone(v) or "") if v else ""
         state["settings"] = s
         return {"ok": True, "settings": _settings()}
+
+    @web.post("/admin/reset-lead")
+    async def admin_reset_lead(req: Request):
+        """Owner only: forget one phone so a test can run from scratch.
+        Touches only our own records, never Sierra."""
+        if _role(req) != "owner":
+            return JSONResponse({"error": "forbidden"}, status_code=403)
+        try:
+            body = await req.json()
+        except Exception:
+            body = {}
+        ph = norm_phone(str(body.get("phone", "")))
+        if not ph:
+            return JSONResponse({"error": "phone required"}, status_code=400)
+        try:
+            del state[f"lead:{ph}"]
+        except KeyError:
+            pass
+        for key in ("lead_index", "awaiting_email", "sierra_retry"):
+            lst = state.get(key, []) or []
+            if ph in lst:
+                state[key] = [p for p in lst if p != ph]
+        r = state.get("retries", {}) or {}
+        if r.pop(ph, None) is not None:
+            state["retries"] = r
+        return {"ok": True, "reset": ph}
 
     return web
 
@@ -1259,6 +1643,38 @@ def retry_worker():
         print(f"RETRY attempt {plan['attempts']} -> {phone}: {status}")
     if changed:
         state["retries"] = retries
+
+
+def email_followup_worker():
+    """5-minute tick: one reminder to anyone who never sent their email, then
+    give up and hand it to the owner. Working hours only, never after STOP."""
+    if not _within_hours():
+        return
+    now = time.time()
+    waiting = state.get("awaiting_email", []) or []
+    keep = []
+    for phone in waiting:
+        lead = state.get(f"lead:{phone}", None)
+        if not lead or not lead.get("awaiting_email") or _blocked(phone):
+            continue
+        asked = lead.get("email_asked_ts") or now
+        nudges = int(lead.get("email_nudges") or 0)
+        if nudges == 0 and now - asked >= EMAIL_REMIND_AFTER:
+            _sms(phone, ("Hola, soy Sofía, asistente de Ulises Ortega. ¿Me comparte su correo electrónico para que Ulises le dé seguimiento? Responda STOP para no ser contactado."
+                         if lead.get("lang") == "es" else
+                         "Hi, it's Sofia, Ulises Ortega's assistant. Could you reply with your email so Ulises can follow up? Reply STOP to opt out."))
+            _touch_lead(phone, email_nudges=1, email_reminded_ts=now)
+            keep.append(phone)
+        elif nudges >= 1 and now - asked >= EMAIL_GIVEUP_AFTER:
+            _touch_lead(phone, awaiting_email=False, email_gave_up=True)
+            _sms_owner(f"📭 NO EMAIL after 2 texts: {lead.get('name') or 'caller'} {phone}. "
+                       "Not in Sierra — add by hand if you want them there.")
+        else:
+            keep.append(phone)
+    dropped = set(waiting) - set(keep)
+    if dropped:
+        cur = state.get("awaiting_email", []) or []      # re-read: _ask_email may have added one
+        state["awaiting_email"] = [p for p in cur if p not in dropped]
 
 
 # ── weekly ROI report (fired by GitHub Actions cron, Mon 9:15am MT) ──────────
