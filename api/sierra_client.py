@@ -3,10 +3,10 @@ lead under THIS agent. Nothing else.
 
 Scope, on purpose (ClearView's key is account-wide, so we police ourselves):
   * CREATE only. Never update, reassign, or delete anything.
-  * Every lead is created with assignTo={agentUserId: SIERRA_AGENT_ID} AND
-    source "Sofia-AI" (ClearView's routing rule keys on that source) — two
-    independent ways it lands on the right agent. If Sierra still reports a
-    different agent, we flag it loudly instead of hoping.
+  * Every lead is sent in EXACTLY the format proven live on 9/14 (source
+    "Sofia-AI", no assignTo). ClearView's routing rule puts it on Ulises and
+    we read the lead back to confirm; if it is anywhere else, the owner is
+    alerted instead of us hoping.
   * If the email or phone already exists in Sierra we do NOT touch that lead —
     we report "already in Sierra" and let humans decide. (Sierra keys leads on
     email; re-posting an existing email is undocumented behaviour.)
@@ -79,39 +79,31 @@ def _digits(s) -> str:
     return "".join(ch for ch in str(s or "") if ch.isdigit())[-10:]
 
 
-def _existing(email: str, phone: str):
-    """leadId of an existing Sierra lead with EXACTLY this email or phone,
-    else None. Read-only. Sierra's search is a partial match ("ortega@gmail"
-    would hit julio.ortega@gmail.com), so every hit is compared field for
-    field before it counts. Any status except deleted counts (an archived lead
-    is still someone's lead). Returns "error" if Sierra couldn't be asked."""
+def _existing(email: str):
+    """The existing Sierra lead with EXACTLY this email (as a dict), else None.
+    Read-only, and the same call as the proven 9/14 script: GET /leads/find with
+    only email + pageSize. Sierra's search is a partial match ("ortega@gmail"
+    would hit julio.ortega@gmail.com), so each hit is compared exactly before it
+    counts. Returns "error" if Sierra couldn't be asked."""
     import httpx
-    want_email, want_phone = email.lower(), _digits(phone)
-    for params in ({"email": email} if email else None, {"phone": phone} if phone else None):
-        if not params:
-            continue
-        params["leadStatus"] = "AllExceptDeleted"
-        params["pageSize"] = 25
-        try:
-            r = httpx.get(f"{BASE}/leads/find", headers=_headers(), params=params, timeout=TIMEOUT)
-        except Exception as e:
-            _note_fail(f"find: {str(e)[:120]}")
-            return "error"
-        body = _json_or_none(r)
-        if body is None:
-            _note_fail(f"find HTTP {r.status_code}: {r.text[:120]}")
-            return "error"
-        for hit in (body.get("data") or {}).get("leads") or []:
-            if not isinstance(hit, dict):
-                continue
-            if want_email and (hit.get("email") or "").strip().lower() == want_email:
-                return hit.get("id") or -1
-            if want_phone and _digits(hit.get("phone")) == want_phone:
-                return hit.get("id") or -1
+    want = email.lower()
+    try:
+        r = httpx.get(f"{BASE}/leads/find", headers=_headers(),
+                      params={"email": email, "pageSize": 25}, timeout=TIMEOUT)
+    except Exception as e:
+        _note_fail(f"find: {str(e)[:120]}")
+        return "error"
+    body = _json_or_none(r)
+    if body is None:
+        _note_fail(f"find HTTP {r.status_code}: {r.text[:120]}")
+        return "error"
+    for hit in (body.get("data") or {}).get("leads") or []:
+        if isinstance(hit, dict) and (hit.get("email") or "").strip().lower() == want:
+            return hit
     return None
 
 
-def _lead_type(interest: str) -> int:
+def _lead_type(interest: str) -> int:   # unused: proven format sends leadType 1
     k = (interest or "").lower()
     if "buysell" in k or ("buy" in k and "sell" in k):
         return 3
@@ -120,11 +112,12 @@ def _lead_type(interest: str) -> int:
     return 1
 
 
-def push_lead(lead: dict) -> dict:
+def push_lead(lead: dict, adopt: bool = False) -> dict:
     """Website lead -> Sierra lead under our agent.
 
     Returns {"status": one of
         "sent"        (+ lead_id)          created and confirmed on our agent
+        "routing"     (+ lead_id)          created unassigned; ClearView's rule assigns it
         "wrong_agent" (+ lead_id, agent)   created but Sierra put it elsewhere
         "exists"      (+ lead_id)          already in Sierra, NOT touched
         "no_email"                         Sierra requires email; not sent
@@ -139,11 +132,17 @@ def push_lead(lead: dict) -> dict:
     if not _EMAIL_RE.fullmatch(email):        # Sierra requires a valid one
         return {"status": "no_email"}
 
-    found = _existing(email, phone)
+    found = _existing(email)
     if found == "error":
         return {"status": "error"}
     if found is not None:
-        return {"status": "exists", "lead_id": found}
+        fid = found.get("id") or -1
+        # After a create that timed out, the lead may be ours: same email AND
+        # our source. Adopt it (then confirm routing) instead of re-posting.
+        src = (found.get("source") or "").lower().replace("-", "").replace(" ", "")
+        if adopt and src == SOURCE.lower().replace("-", "") and fid != -1:
+            return {"status": "routing", "lead_id": fid, "adopted": True}
+        return {"status": "exists", "lead_id": fid}
 
     import httpx
     name = (lead.get("name") or "").strip()
@@ -164,29 +163,31 @@ def push_lead(lead: dict) -> dict:
         bits.append("Call: " + " ".join(str(lead["last_summary"]).split())[:400])
     by_phone = lead.get("source") == "inbound_call"
 
+    # EXACTLY the fields of the lead that was proven live on 9/14 (#5562855):
+    # no assignTo, no shortSummary, 10-digit phone, leadType 1, tags [Sofia-AI].
+    # ClearView's routing rule (source Sofia-AI -> Ulises) assigns it; we then
+    # read it back to confirm, the same check that proved it by hand.
     body = {
         "firstName": first or name or ("Phone" if by_phone else "Website"),
         "lastName": last or "Lead",
         "email": email,
-        "phone": phone,
+        "phone": _digits(phone),
         "password": secrets.token_urlsafe(12),   # Sierra requires one (lead's site login)
         "sendRegistrationEmail": False,           # no surprise welcome email
-        "leadType": _lead_type(lead.get("interest", "")),
+        "leadType": 1,
         "source": SOURCE,
-        "tags": [SOURCE, f"lang-{(lead.get('lang') or 'en')}"],
-        "shortSummary": bits[0][:100],
+        "tags": [SOURCE],
         "note": (("Sofia AI - called in on Ulises's line. " if by_phone else "Sofia AI - website inquiry. ")
                  + " | ".join(bits))[:900],
-        "assignTo": {"agentUserId": _agent_id()},
     }
-    if os.environ.get("SIERRA_AGENT_EMAIL"):
-        body["assignTo"]["agentUserEmail"] = os.environ["SIERRA_AGENT_EMAIL"]
 
     try:
-        r = httpx.post(f"{BASE}/leads", headers=_headers(), json=body, timeout=TIMEOUT)
+        r = httpx.post(f"{BASE}/leads", headers=_headers(), json=body, timeout=15)
     except Exception as e:
-        _note_fail(f"create: {str(e)[:120]}")
-        return {"status": "error"}
+        # A timeout doesn't mean it failed: Sierra may have created it. The
+        # retry looks for it first and adopts it rather than creating twice.
+        _note_fail(f"create (unknown result): {str(e)[:100]}")
+        return {"status": "create_unknown"}
     res = _json_or_none(r)
     if res is None:
         _note_fail(f"create HTTP {r.status_code}: {r.text[:150]}")
@@ -200,12 +201,36 @@ def push_lead(lead: dict) -> dict:
         _note_fail("create: success but no leadId in reply")
         return {"status": "error"}
     got = data.get("agentUserId")
-    if got != _agent_id():
+    _state["sierra_fail_note"] = ""
+    if got == _agent_id():
+        return {"status": "sent", "lead_id": lead_id}
+    if isinstance(got, int) and got > 0:
         who = f"{data.get('agentUserFirstName', '')} {data.get('agentUserLastName', '')}".strip() or str(got)
         _note_fail(f"lead {lead_id} landed on {who}, not agent {_agent_id()}")
         return {"status": "wrong_agent", "lead_id": lead_id, "agent": who}
-    _state["sierra_fail_note"] = ""
-    return {"status": "sent", "lead_id": lead_id}
+    # -1 = unassigned at creation: ClearView's routing rule assigns it next
+    return {"status": "routing", "lead_id": lead_id}
+
+
+def assigned_agent(lead_id):
+    """Read-only: who a lead is assigned to now. Returns (agentUserId, name),
+    or None if Sierra couldn't be asked."""
+    if not configured() or not lead_id:
+        return None
+    import httpx
+    try:
+        r = httpx.get(f"{BASE}/leads/get/{int(lead_id)}", headers=_headers(), timeout=TIMEOUT)
+    except Exception as e:
+        _note_fail(f"get: {str(e)[:120]}")
+        return None
+    body = _json_or_none(r)
+    if body is None:
+        _note_fail(f"get HTTP {r.status_code}: {r.text[:120]}")
+        return None
+    a = (body.get("data") or {}).get("assignedTo") or {}
+    aid = a.get("agentUserId")
+    name = f"{a.get('agentUserFirstName', '')} {a.get('agentUserLastName', '')}".strip()
+    return (aid if isinstance(aid, int) else -1, name)
 
 
 def add_call_note(lead_id, note: str) -> bool:
@@ -232,6 +257,8 @@ def describe(result: dict) -> str:
         return f"-> Sierra #{result.get('lead_id')} (assigned to Ulises)"
     if s == "wrong_agent":
         return f"!! Sierra #{result.get('lead_id')} went to {result.get('agent')} - NOT Ulises, fix in Sierra"
+    if s == "routing":
+        return f"-> Sierra #{result.get('lead_id')} (ClearView routing to Ulises)"
     if s == "exists":
         return "Sierra: already in CRM, not re-added"
     if s == "already":
@@ -241,5 +268,7 @@ def describe(result: dict) -> str:
     if s == "no_email":
         return "Sierra: no email given, add by hand"
     if s == "error":
-        return "Sierra: failed, see dashboard"
+        return "Sierra: failed, retrying"
+    if s == "create_unknown":
+        return "Sierra: slow reply, re-checking it saved"
     return ""

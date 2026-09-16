@@ -258,6 +258,17 @@ async function load(){
      <div class="stat"><b>${p.spoke_not_booked||0}</b><span>spoke, not booked</span></div>
      <div class="stat"><b>${p.booked||0}</b><span>booked</span></div>`;
 
+  const SZ = {sent:["Sierra ✓ on Ulises",""], routing:["Sierra: routing…",""],
+              wrong_agent:["Sierra: WRONG AGENT","background:#fde2dd;color:#8a2a1c"],
+              unassigned:["Sierra: UNASSIGNED","background:#fde2dd;color:#8a2a1c"],
+              exists:["Sierra: already there",""], no_email:["Sierra: no email",""],
+              error:["Sierra: retrying","background:#fff3cd"], create_unknown:["Sierra: re-checking","background:#fff3cd"],
+              inflight:["Sierra: adding…",""]};
+  const sierraTag = l => {
+    if(l.awaiting_email) return ' <span class="tag" style="background:#fff3cd">waiting on email</span>';
+    const z = SZ[l.sierra_status]; if(!z) return "";
+    return ` <span class="tag" style="${z[1]}">${esc(z[0])}${l.sierra_lead_id?` #${esc(String(l.sierra_lead_id))}`:""}</span>`;
+  };
   document.getElementById("leads").innerHTML = (d.leads||[]).map((l,i)=>{
     const st = l.status||"";
     const pill = `<span class="tag" style="${STY[st]||''}">${esc(l.status_label||"New")}</span>`;
@@ -274,7 +285,7 @@ async function load(){
       return `<div style="padding:3px 0;border-bottom:1px dashed var(--line)">${bits.join(" · ")}</div>`;
     }).join("") || `<div style="color:var(--muted)">No calls logged yet.</div>`;
     return `<tr onclick="document.getElementById('h${i}').classList.toggle('hide')" style="cursor:pointer">
-      <td>${pill}${l.demo?' <span class="tag">demo</span>':''}</td><td>${lvl(l.level)}</td>
+      <td>${pill}${l.demo?' <span class="tag">demo</span>':''}${sierraTag(l)}</td><td>${lvl(l.level)}</td>
       <td>${esc(l.name)}</td><td>${esc(l.phone)}</td>
       <td><span class="tag">${esc(l.interest)}</span> ${l.lang==="es"?"🇲🇽":""}</td>
       <td>${next}</td><td>${fmtTs(l.ts)}</td>

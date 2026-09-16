@@ -246,7 +246,7 @@ TOOLS = [
     {
         "type": "custom",
         "name": "book_showing",
-        "description": "Book a tentative appointment on Ulises's calendar: a home showing or an in-person home valuation. Only call once you have a specific day and time from the caller.",
+        "description": "Book a tentative PHONE CALL with Ulises on his calendar (purpose consult). Only book an in-person showing if the caller explicitly insists. Only call once you have a specific day and time from the caller.",
         "url": f"{MODAL_URL}/tools/book-showing",
         "speak_during_execution": True,
         "execution_message_description": "Let me get that on Ulises's calendar.",
@@ -267,7 +267,7 @@ TOOLS = [
         # call returns to Sofia and she takes a message.
         "type": "transfer_call",
         "name": "transfer_call",
-        "description": "Warm-transfer the caller to Ulises. Only when the caller explicitly asks to speak with him right now.",
+        "description": "Warm-transfer the caller to Ulises: when they ask to speak with him right now, or when your transfer rules say to offer a live connection and they accept.",
         "transfer_destination": {"type": "predefined", "number": OWNER},
         "transfer_option": {
             "type": "warm_transfer",
@@ -304,6 +304,9 @@ EXTRA_FIELDS = [
     {"type": "string", "name": "email_spoken",
      "description": "An email address the caller said out loud, written as an address, or 'none'",
      "examples": ["maria.g@gmail.com", "none"]},
+    {"type": "string", "name": "caller_language",
+     "description": "The language the caller mostly spoke: English or Spanish",
+     "examples": ["English", "Spanish"]},
     {"type": "string", "name": "intent",
      "description": "What they want: one of buy, sell, buysell, rent, value, other",
      "examples": ["buy", "sell", "rent"]},

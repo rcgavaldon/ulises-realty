@@ -443,33 +443,40 @@ def api():
 
     def norm_phone(raw: str) -> str | None:
         digits = "".join(c for c in raw if c.isdigit())
-        if len(digits) == 10:
-            return "+1" + digits
         if len(digits) == 11 and digits.startswith("1"):
-            return "+" + digits
+            digits = digits[1:]
+        # a real US number: 10 digits, area code and exchange don't start with 0/1
+        if len(digits) == 10 and digits[0] not in "01" and digits[3] not in "01":
+            return "+1" + digits
         return None
+
+    def _cron_ok(req: Request) -> bool:
+        tok = os.environ.get("CRON_TOKEN") or ""
+        return bool(tok) and req.headers.get("x-cron-token") == tok
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api", "rev": "v11-sierra"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "v12-proven-format"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.
     @web.post("/cron/retry")
     def cron_retry(req: Request):
-        if req.headers.get("x-cron-token") != os.environ.get("CRON_TOKEN"):
+        if not _cron_ok(req):
             return JSONResponse({"error": "forbidden"}, status_code=403)
-        retry_worker()
-        email_followup_worker()
-        try:
-            _sierra_retry_tick()
-        except Exception as e:
-            print(f"sierra retry tick failed: {e}")
+        # each job on its own: one failing never skips the others
+        for job in (retry_worker, email_followup_worker, _sierra_stuck_scan,
+                    _sierra_retry_tick, _sierra_confirm_tick):
+            try:
+                job()
+            except Exception as e:
+                print(f"tick {job.__name__} failed: {e}")
+        state["last_tick_ts"] = time.time()
         return {"ok": True}
 
     @web.post("/cron/weekly")
     def cron_weekly(req: Request):
-        if req.headers.get("x-cron-token") != os.environ.get("CRON_TOKEN"):
+        if not _cron_ok(req):
             return JSONResponse({"error": "forbidden"}, status_code=403)
         weekly_report()
         return {"ok": True}
@@ -478,13 +485,13 @@ def api():
     # which re-pulls only if the daily one didn't land — belt and suspenders.
     @web.post("/cron/spark-sync")
     def cron_spark_sync(req: Request):
-        if req.headers.get("x-cron-token") != os.environ.get("CRON_TOKEN"):
+        if not _cron_ok(req):
             return JSONResponse({"error": "forbidden"}, status_code=403)
         return spark_sync(force=True)
 
     @web.post("/cron/spark-check")
     def cron_spark_check(req: Request):
-        if req.headers.get("x-cron-token") != os.environ.get("CRON_TOKEN"):
+        if not _cron_ok(req):
             return JSONResponse({"error": "forbidden"}, status_code=403)
         return spark_sync(force=False)
 
@@ -554,7 +561,7 @@ def api():
         except Exception:
             return None
 
-    def _sierra_push(lead_rec: dict) -> str:
+    def _sierra_push(lead_rec: dict, adopt: bool = False) -> str:
         """Website/phone lead -> Sierra under Ulises, at most ONCE per lead.
         Never for demo leads. Stores Sierra's leadId only when Sierra confirmed
         the lead landed on Ulises, so a call note can never reach another
@@ -570,21 +577,37 @@ def api():
         cur = state.get(f"lead:{phone}", {}) or {}
         if cur.get("sierra_lead_id"):
             return sierra_client.describe({"status": "already", "lead_id": cur["sierra_lead_id"]})
-        if cur.get("sierra_status") == "inflight" and \
-                time.time() - float(cur.get("sierra_inflight_ts") or 0) < 120:
-            return sierra_client.describe({"status": "inflight"})   # double-submit
+        # Atomic claim so two overlapping submits can never both create a lead.
+        # The claim expires after 120 s (a crashed push must not block forever).
+        claim = f"claim:sierra:{phone}"
+        try:
+            got_claim = state.put(claim, time.time(), skip_if_exists=True)
+        except (AttributeError, TypeError):          # plain dict in offline tests
+            got_claim = claim not in state
+            if got_claim:
+                state[claim] = time.time()
+        if not got_claim:
+            if time.time() - float(state.get(claim) or 0) < 120:
+                return sierra_client.describe({"status": "inflight"})
+            state[claim] = time.time()                 # stale claim: take it over
         _touch_lead(phone, sierra_status="inflight", sierra_inflight_ts=time.time())
         try:
-            res = sierra_client.push_lead(lead_rec)
+            res = sierra_client.push_lead(lead_rec, adopt=adopt)
         except Exception as e:
             sierra_client._note_fail(f"push: {str(e)[:120]}")
             res = {"status": "error"}
         upd = {"sierra_status": res.get("status") or "error"}
-        if res.get("status") == "sent":
+        if res.get("status") in ("sent", "routing"):
             upd["sierra_lead_id"] = res["lead_id"]
             upd["sierra_created_ts"] = time.time()
-        elif res.get("status") == "error":
-            # Sierra down / timeout: the cron tick tries again (max 3).
+            if res["status"] == "routing":
+                q = [p for p in (state.get("sierra_confirm", []) or []) if p != phone]
+                q.append(phone)
+                state["sierra_confirm"] = q[-100:]
+        elif res.get("status") in ("error", "create_unknown"):
+            # Sierra down / timeout: the cron tick tries again (max 3). After a
+            # create that timed out, the retry first looks for the lead we may
+            # have created (source Sofia-AI) and adopts it instead of re-posting.
             upd["sierra_attempts"] = int(cur.get("sierra_attempts") or 0) + 1
             q = [p for p in (state.get("sierra_retry", []) or []) if p != phone]
             q.append(phone)
@@ -593,6 +616,79 @@ def api():
             upd["sierra_misrouted_id"] = res.get("lead_id")   # kept for the owner; never used for notes
         _touch_lead(phone, **upd)
         return sierra_client.describe(res)
+
+    SIERRA_ROUTE_ALERT_MIN = 15   # still unassigned after this -> owner alert
+
+    def _sierra_confirm(phone: str, force: bool = False):
+        """Read the lead back from Sierra (the check that proved lead #5562855):
+        on Ulises -> "sent" (call notes allowed); on anyone else -> alert;
+        still unassigned after 15 min -> alert. Read-only against Sierra.
+        force=True also re-checks an 'unassigned' lead ClearView may have fixed."""
+        l = state.get(f"lead:{phone}", None) or {}
+        allowed = ("routing", "unassigned") if force else ("routing",)
+        if l.get("sierra_status") not in allowed or not l.get("sierra_lead_id"):
+            if l.get("sierra_status") != "routing":
+                _drop_confirm(phone)
+            return
+        try:
+            import sierra_client
+            got = sierra_client.assigned_agent(l["sierra_lead_id"])
+        except Exception:
+            got = None
+        if got is None:
+            return                                    # Sierra unreachable: next tick
+        aid, who = got
+        agent = sierra_client._agent_id()
+        lid = l["sierra_lead_id"]
+        if aid == agent:
+            _touch_lead(phone, sierra_status="sent", sierra_confirmed_ts=time.time())
+            _drop_confirm(phone)
+        elif aid and aid > 0:
+            _touch_lead(phone, sierra_status="wrong_agent", sierra_misrouted_id=lid)
+            _drop_confirm(phone)
+            sierra_client._note_fail(f"lead {lid} routed to {who or aid}, not Ulises")
+            _alert_once(f"sierra_route:{lid}",
+                        f"!! SIERRA: lead #{lid} ({l.get('name') or phone}) went to {who or aid}, "
+                        "NOT Ulises. Ask ClearView to reassign it and check their Sofia-AI rule.",
+                        every=10 * 365 * 86400)
+        elif l.get("sierra_status") == "routing" and \
+                time.time() - float(l.get("sierra_created_ts") or 0) > SIERRA_ROUTE_ALERT_MIN * 60:
+            _touch_lead(phone, sierra_status="unassigned")
+            _drop_confirm(phone)
+            sierra_client._note_fail(f"lead {lid} still unassigned after {SIERRA_ROUTE_ALERT_MIN} min")
+            _alert_once(f"sierra_route:{lid}",
+                        f"!! SIERRA: lead #{lid} ({l.get('name') or phone}) is still UNASSIGNED after "
+                        f"{SIERRA_ROUTE_ALERT_MIN} min. ClearView's Sofia-AI rule may be off.",
+                        every=10 * 365 * 86400)
+
+    def _drop_confirm(phone: str):
+        q = state.get("sierra_confirm", []) or []
+        if phone in q:
+            state["sierra_confirm"] = [p for p in q if p != phone]
+
+    def _sierra_confirm_tick():
+        for ph in list(state.get("sierra_confirm", []) or []):
+            _sierra_confirm(ph)
+
+    async def _confirm_soon(phone: str):
+        """Check the routing 30 s and 2 min after create (the rule took 13 s on
+        9/14). The cron tick is the backup if this container goes away first."""
+        try:
+            for wait in (30, 90):
+                await asyncio.sleep(wait)
+                await asyncio.to_thread(_sierra_confirm, phone)
+                if (state.get(f"lead:{phone}", {}) or {}).get("sierra_status") != "routing":
+                    return
+        except Exception as e:
+            print(f"confirm_soon failed: {e}")
+
+    _BG_TASKS = set()
+
+    def _bg(coro):
+        """Fire-and-forget that can't be garbage-collected mid-flight."""
+        t = asyncio.create_task(coro)
+        _BG_TASKS.add(t)
+        t.add_done_callback(_BG_TASKS.discard)
 
     def _sierra_retry_tick():
         """Cron: re-push leads whose Sierra create failed (Sierra down,
@@ -604,23 +700,37 @@ def api():
         for ph in q:
             l = state.get(f"lead:{ph}", None) or {}
             if not l or l.get("sierra_lead_id") or l.get("demo") or _blocked(ph) \
-                    or l.get("sierra_status") not in ("error", "inflight"):
+                    or l.get("sierra_status") not in ("error", "inflight", "create_unknown"):
                 done.add(ph)
                 continue
             if int(l.get("sierra_attempts") or 0) >= 3:
                 done.add(ph)
                 _sms_owner(f"⚠️ SIERRA: couldn't add {l.get('name') or 'lead'} {ph} after 3 tries. "
-                           "Add them by hand.")
+                           "Check Sierra and add them by hand if they're not there.")
                 continue
-            line = _sierra_push(l)
+            line = _sierra_push(l, adopt=l.get("sierra_status") in ("create_unknown", "inflight"))
             l2 = state.get(f"lead:{ph}", {}) or {}
-            if l2.get("sierra_status") != "error":
+            if l2.get("sierra_status") not in ("error", "create_unknown"):
                 done.add(ph)
                 if line:
                     _sms_owner(f"🔁 SIERRA retry: {l.get('name') or 'lead'} {ph}\n{line}")
         if done:
             cur = state.get("sierra_retry", []) or []
             state["sierra_retry"] = [p for p in cur if p not in done]
+
+    def _sierra_stuck_scan():
+        """A push whose container died mid-flight stays 'inflight' forever.
+        Hand those to the retry queue (which adopts the lead if it was made)."""
+        now = time.time()
+        q = state.get("sierra_retry", []) or []
+        add = []
+        for ph in (state.get("lead_index", []) or [])[-100:]:
+            l = state.get(f"lead:{ph}", None) or {}
+            if l.get("sierra_status") == "inflight" and not l.get("sierra_lead_id") \
+                    and now - float(l.get("sierra_inflight_ts") or 0) > 300 and ph not in q:
+                add.append(ph)
+        if add:
+            state["sierra_retry"] = (q + add)[-100:]
 
     def _spoken_email(s: str) -> str:
         """'john dot doe at gmail dot com' -> john.doe@gmail.com, else ''."""
@@ -673,8 +783,15 @@ def api():
         if not body.get("consent"):
             return JSONResponse({"error": "consent required"}, status_code=400)
         name = str(body.get("name", "")).strip()[:80]
-        phone = norm_phone(str(body.get("phone", "")))
+        raw_phone = str(body.get("phone", "")).strip()[:40]
+        phone = norm_phone(raw_phone)
         if not name or not phone:
+            # Tell a human instead of losing a real person over a typo'd number.
+            if name or raw_phone:
+                _alert_once(f"badlead:{''.join(c for c in raw_phone if c.isdigit())}:{name[:20]}",
+                            f"⚠️ ULISES SITE: inquiry with a number Sofia can't dial — "
+                            f"{name or '?'} · '{raw_phone}' · {str(body.get('email', ''))[:60]}. "
+                            "Reach out by hand.", every=3600)
             return JSONResponse({"error": "name and valid US phone required"}, status_code=400)
         if _blocked(phone):
             return JSONResponse({"ok": True, "call": "skipped"})
@@ -721,8 +838,12 @@ def api():
         rl["per"][phone] = [t for t in rl["per"].get(phone, []) if now - t < 3600]
         rl["day"] = [t for t in rl["day"] if now - t < 86400]
         if len(rl["per"][phone]) >= 3 or len(rl["day"]) >= 30:
-            _sms_owner(f"⚠️ ULISES DEMO: rate-limited lead {name} {phone}")
+            _sms_owner(f"{'🧪 DEMO — ' if demo else ''}⚠️ ULISES SITE: {name} {phone} submitted again "
+                       "(limit reached) — no new call placed.")
             return JSONResponse({"ok": True, "call": "rate-limited"})
+        # Sofia already dialed this number in the last 10 min (a double-submit or a
+        # re-run of the value tool): keep the new info, don't ring them again.
+        called_recently = any(now - t < 600 for t in rl["per"][phone])
         rl["per"][phone].append(now)
         rl["day"].append(now)
         state["ratelimit"] = rl
@@ -749,6 +870,12 @@ def api():
                 lead_rec["email"] = prev["email"]
         if lead_rec["email"]:
             lead_rec["awaiting_email"] = False   # they just gave it on the form
+        if same_person:
+            # a push that finished since we read `prev` must not be wiped by this write
+            latest = state.get(f"lead:{phone}", None) or {}
+            for k in ("sierra_lead_id", "sierra_status", "sierra_created_ts", "sierra_misrouted_id"):
+                if latest.get(k):
+                    lead_rec[k] = latest[k]
         state[f"lead:{phone}"] = lead_rec
         idx = state.get("lead_index", [])
         if phone in idx:
@@ -786,14 +913,19 @@ def api():
                          else "🗓️ ULISES SITE BOOKING (no insta-call)"), name, phone,
                         f"Phone call: {label}", f"Wants: {interest_key} · Lang: {lang.upper()}"]
                 _sierra_line = await asyncio.to_thread(_sierra_push, lead_rec)
+                _bg(_confirm_soon(phone))
                 if _sierra_line:
                     card.append(_sierra_line)
                 _sms_owner("\n".join(card))
                 return JSONResponse({"ok": True, "scheduled": label})
             # slot vanished -> fall through to the instant call so no lead is lost
-        call_status = _place_call(lead_rec)
-        _bump_stat("leads")
-        _bump_stat("calls_placed")
+        if called_recently:
+            call_status = "skipped: already called in the last 10 min"
+            _bump_stat("leads")
+        else:
+            call_status = _place_call(lead_rec)
+            _bump_stat("leads")
+            _bump_stat("calls_placed")
 
         card = [(("🧪 DEMO — " if demo else "") +
                  f"{LEVEL_EMOJI[_lead_level(lead_rec)]} — ULISES SITE"), name, phone,
@@ -811,6 +943,7 @@ def api():
         card.append(f"Note: {lead_rec['message'][:120]}")
         card.append(f"Sofia call: {call_status[:80]}")
         _sierra_line = await asyncio.to_thread(_sierra_push, lead_rec)
+        _bg(_confirm_soon(phone))
         if _sierra_line:
             card.append(_sierra_line)
         _sms_owner("\n".join(card))
@@ -900,7 +1033,7 @@ def api():
     # Point the Telnyx messaging profile's inbound webhook at this URL.
     STOP_WORDS = {"stop", "stopall", "unsubscribe", "cancel", "end", "quit", "revoke",
                   "alto", "parar", "cancelar", "baja"}
-    START_WORDS = {"start", "unstop", "yes", "si", "sí"}
+    START_WORDS = {"start", "unstop", "alta"}
 
     @web.post("/telnyx-sms")
     async def telnyx_sms(req: Request):
@@ -932,10 +1065,15 @@ def api():
             state["sms_seen"] = seen[-300:]
         toks = __import__("re").findall(r"[a-z0-9áéíóúñü]+", text.lower())
         word = toks[0] if toks else ""
+        # "stop"-type words count anywhere; everyday words like "cancel" or "end"
+        # only when they are the whole message ("I need to cancel my showing" is
+        # not an opt-out).
         strong = {"stop", "stopall", "unsubscribe", "alto", "baja"}
+        weak = STOP_WORDS - strong
         low = text.lower()
-        wants_out = word in STOP_WORDS or any(t in strong for t in toks) \
+        wants_out = any(t in strong for t in toks) or (len(toks) == 1 and word in weak) \
             or "opt out" in low or "optout" in low or "opt-out" in low
+        es = (state.get(f"lead:{frm}", {}) or {}).get("lang") == "es"
 
         if wants_out:
             state[f"optout:{frm}"] = True
@@ -946,14 +1084,19 @@ def api():
             waiting = state.get("awaiting_email", []) or []
             if frm in waiting:
                 state["awaiting_email"] = [p for p in waiting if p != frm]
-            _sms(frm, "You're unsubscribed and won't be contacted again. "
+            _sms(frm, "Listo, no le volveremos a contactar. Responda START si cambia de opinión."
+                      if es else
+                      "You're unsubscribed and won't be contacted again. "
                       "Reply START if you ever change your mind.")
-            _sms_owner(f"🚫 OPT-OUT honored: {frm}")
+            _sms_owner(f"🚫 OPT-OUT honored: {frm}\nThey wrote: {text[:200]}")
             return {"ok": True, "optout": True}
 
-        if word in START_WORDS and state.get(f"optout:{frm}", False):
+        # Re-subscribe only on an explicit START, never on a stray "yes".
+        if len(toks) == 1 and word in START_WORDS and state.get(f"optout:{frm}", False):
             state[f"optout:{frm}"] = False
-            _sms(frm, "You're re-subscribed. Reply STOP anytime.")
+            _sms(frm, "Listo, está suscrito de nuevo. Responda STOP cuando quiera."
+                      if es else "You're re-subscribed. Reply STOP anytime.")
+            _sms_owner(f"✅ RE-SUBSCRIBED: {frm}")
             return {"ok": True, "optin": True}
 
         lead = state.get(f"lead:{frm}", {}) or {}
@@ -974,6 +1117,7 @@ def api():
                 state["awaiting_email"] = waiting
                 lead = state.get(f"lead:{frm}", {}) or {}
                 line = await asyncio.to_thread(_sierra_push, lead)
+                _bg(_confirm_soon(frm))
                 if lead.get("lang") == "es":
                     _sms(frm, "¡Recibido, gracias! Ulises le dará seguimiento pronto. Responda STOP para no ser contactado.")
                 else:
@@ -1118,6 +1262,10 @@ def api():
                 _cn = (custom.get("caller_name") or "").strip()
                 if _cn and _cn.lower() not in ("unknown", "n/a", "none") and not _known.get("name"):
                     _upd["name"] = _cn[:80]
+                # a caller we met on the phone: texts go in the language they spoke
+                _cl = (custom.get("caller_language") or "").strip().lower()
+                if _known.get("source") == "inbound_call" and _cl.startswith(("sp", "es")):
+                    _upd["lang"] = "es"
                 _it = (custom.get("intent") or "").strip().lower()
                 if _it in INTEREST and _it != "other" and _known.get("interest") in (None, "", "other"):
                     _upd["interest"] = _it
@@ -1132,6 +1280,9 @@ def api():
             # Unanswered dials also produce call_analyzed: those get no note and no ask.
             _connected = dur >= 12 and \
                 (call.get("disconnection_reason") or "").lower() not in NO_ANSWER_REASONS
+            if trusted and _connected and _known.get("sierra_status") in ("routing", "unassigned"):
+                await asyncio.to_thread(_sierra_confirm, phone, True)
+                _known = state.get(f"lead:{phone}", {}) or _known
             if trusted and _connected and _known.get("sierra_lead_id") \
                     and _known.get("sierra_status") == "sent" and not _known.get("demo") \
                     and time.time() - float(_known.get("sierra_created_ts") or _known.get("ts") or 0) \
@@ -1185,7 +1336,8 @@ def api():
                 "message": "none", "email": "", "address": "", "valuation_line": "",
                 "prequalified": "", "own_rent": "", "move_date": "",
                 # The owner's own phones calling in are tests: never Sierra.
-                "demo": from_number in _owner_cells(), "source": "inbound_call", "ts": time.time(),
+                "demo": from_number in set(_owner_cells()) | {os.environ.get("OWNER_CELL", "")},
+                "source": "inbound_call", "ts": time.time(),
                 "status": "connected", "attempts": 0, "next_at": None, "calls": [],
             }
             state[f"lead:{from_number}"] = known
@@ -1199,7 +1351,9 @@ def api():
                      if lang == "es" else
                      f"Hi {known['name']}! This is Sofia, Ulises Ortega's virtual assistant — thanks for calling back. How can I help?")
         else:
-            begin = "Thank you for calling Ulises Ortega Real Estate — this is Sofia, his virtual assistant. How can I help you today?"
+            # unknown caller: we don't know their language yet, so greet in both
+            begin = ("Thank you for calling Ulises Ortega Real Estate, this is Sofia, his virtual assistant. "
+                     "Si prefiere español, con gusto. How can I help you today?")
         try:
             client = Retell(api_key=os.environ["RETELL_API_KEY"])
             call = await asyncio.to_thread(
@@ -1212,7 +1366,8 @@ def api():
                     "name": (known or {}).get("name") or "there",
                     "interest": (known or {}).get("interest_desc", "El Paso real estate"),
                     "message": (known or {}).get("message", "none"),
-                    "call_language": "Spanish" if lang == "es" else "English",
+                    "call_language": ("Spanish" if lang == "es" else "English") if (known or {}).get("name")
+                                     else "the caller's language (English or Spanish: switch to Spanish if they speak it)",
                     "call_direction": "inbound",
                     "property": (known or {}).get("address") or "none given",
                     "valuation": (known or {}).get("valuation_line") or "none run",
@@ -1506,6 +1661,7 @@ def api():
                      "fail_note": state.get("spark_fail_note", "")},
             "retell_signatures": state.get("retell_sig", {}) or {},
             "awaiting_email": len(state.get("awaiting_email", []) or []),
+            "sierra_confirming": len(state.get("sierra_confirm", []) or []),
             "sierra": {"configured": _sierra_configured(),
                        "fail_note": state.get("sierra_fail_note", "")},
             "role": _role(req),
@@ -1558,7 +1714,7 @@ def api():
             del state[f"lead:{ph}"]
         except KeyError:
             pass
-        for key in ("lead_index", "awaiting_email", "sierra_retry"):
+        for key in ("lead_index", "awaiting_email", "sierra_retry", "sierra_confirm"):
             lst = state.get(key, []) or []
             if ph in lst:
                 state[key] = [p for p in lst if p != ph]
@@ -1618,31 +1774,56 @@ def retry_worker():
     if not _within_hours():
         return
     now = time.time()
-    retries = state.get("retries", {})
-    changed = False
-    for phone, plan in list(retries.items()):
+
+    def save(phone, plan):
+        # re-read and merge per phone, so a webhook reschedule written while we
+        # were dialing someone else is never overwritten by an old snapshot
+        cur = state.get("retries", {}) or {}
+        if plan is None:
+            cur.pop(phone, None)
+        else:
+            cur[phone] = plan
+        state["retries"] = cur
+
+    for phone, plan in list((state.get("retries", {}) or {}).items()):
+        # Watchdog: a dial with no result after 15 min (no webhook came back)
+        # counts as a no-answer instead of waiting forever.
+        if plan.get("next_at") == float("inf") and now - float(plan.get("dialed_ts") or 0) > 900:
+            if plan.get("attempts", 1) >= MAX_ATTEMPTS:
+                save(phone, None)
+                _touch_lead(phone, status="gave_up", next_at=None)
+                continue
+            step = RETRY_STEPS_MIN[min(plan.get("attempts", 1) - 1, len(RETRY_STEPS_MIN) - 1)]
+            plan["next_at"] = now + step * 60
+            save(phone, plan)
+            continue
         if now < plan.get("next_at", 0):
             continue
-        if _blocked(phone):
-            retries.pop(phone, None)
-            changed = True
+        if _blocked(phone) or not state.get(f"lead:{phone}", None):
+            save(phone, None)
             continue
-        lead_rec = state.get(f"lead:{phone}", None)
-        if not lead_rec:
-            retries.pop(phone, None)
-            changed = True
-            continue
-        plan["attempts"] += 1
+        lead_rec = state.get(f"lead:{phone}")
+        plan["attempts"] = int(plan.get("attempts", 1)) + 1
         plan["next_at"] = float("inf")  # webhook re-schedules on another no-answer
-        retries[phone] = plan
-        changed = True
+        plan["dialed_ts"] = now
+        save(phone, plan)
         status = _place_call(lead_rec)
-        _touch_lead(phone, status="calling", attempts=plan["attempts"])
         _log_call(phone, outcome="dialing", attempt=plan["attempts"])
-        _bump_stat("calls_placed")
         print(f"RETRY attempt {plan['attempts']} -> {phone}: {status}")
-    if changed:
-        state["retries"] = retries
+        if not str(status).startswith("initiated"):
+            # the dial itself failed: no webhook will ever reschedule it
+            if plan["attempts"] >= MAX_ATTEMPTS:
+                save(phone, None)
+                _touch_lead(phone, status="gave_up", next_at=None, attempts=plan["attempts"])
+                _sms_owner(f"📵 ULISES: couldn't reach {lead_rec.get('name') or phone} {phone} "
+                           f"after {plan['attempts']} tries (last dial failed). Follow up by hand.")
+            else:
+                plan["next_at"] = now + 30 * 60
+                save(phone, plan)
+                _touch_lead(phone, status="no_answer", attempts=plan["attempts"], next_at=plan["next_at"])
+            continue
+        _touch_lead(phone, status="calling", attempts=plan["attempts"])
+        _bump_stat("calls_placed")
 
 
 def email_followup_worker():

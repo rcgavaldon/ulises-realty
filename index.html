@@ -602,7 +602,7 @@
               </select>
             </div>
             <div><label data-i18n="fl_lang">PREFERRED LANGUAGE</label>
-              <select name="language">
+              <select name="language" onchange="this.dataset.touched='1'">
                 <option value="en">English</option>
                 <option value="es">Español</option>
               </select>
@@ -840,7 +840,12 @@ function applyLang(){
   renderHot();
   renderMedia();
 }
-function toggleLang(){ LANG = LANG==="en" ? "es" : "en"; applyLang(); }
+function toggleLang(){
+  LANG = LANG==="en" ? "es" : "en"; applyLang();
+  // Sofia calls in the language they're reading, unless they chose one by hand
+  const ls = document.querySelector('#leadForm select[name="language"]');
+  if(ls && !ls.dataset.touched) ls.value = LANG;
+}
 
 // ── Listings render (sample module — replaced by IDX widget later) ──────────
 function renderListings(){
@@ -945,6 +950,7 @@ function renderHot(){
 
 // ── Home value + property tax tool ──────────────────────────────────────────
 let LAST_VALUE = null;      // last estimate, forwarded with the lead so Sofia has it
+const VALUE_LEAD_SENT = {}; // phone (10 digits) -> lead already sent this visit
 let LAST_ADDRESS = "";
 const S = k => (LANG==="es" && I18N.es[k]) ? I18N.es[k] : null;
 
@@ -969,7 +975,11 @@ async function runValue(e){
     if(!d.ok) throw new Error("no estimate");
     LAST_VALUE = d;
     paintValue(d, f.homestead.value === "yes");
-    // they're a lead the moment they see the numbers — Sofia calls with them up
+    // they're a lead the moment they see the numbers — Sofia calls with them up.
+    // Once per phone: re-running the estimate must not trigger another call.
+    const vkey = f.vphone.value.replace(/\D/g,"").slice(-10);
+    if(VALUE_LEAD_SENT[vkey]) { btn.disabled = false; return false; }
+    VALUE_LEAD_SENT[vkey] = true;
     fetch(LEAD_ENDPOINT, {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({
@@ -1054,6 +1064,10 @@ async function onCallTime(sel){
     btn.textContent = t("Book My Call Time →","Reservar Mi Hora →");
     note.textContent = t("🗓️ You pick the time — Ulises calls you then.","🗓️ Tú eliges la hora — Ulises te llama entonces.");
     if(!SLOTS_LOADED && SLOTS_PROMISE) await SLOTS_PROMISE;
+    if(!SLOTS_LOADED){            // no open times: don't strand them, go back to the instant call
+      sel.value = "asap";
+      return onCallTime(sel);
+    }
   } else {
     btn.textContent = t("Get My Call in 60 Seconds →","Recibir Mi Llamada en 60 Segundos →");
     note.textContent = t("⚡ Sofia, my AI assistant, will call you right away.","⚡ Sofía, mi asistente de IA, te llamará de inmediato.");
@@ -1082,7 +1096,16 @@ async function submitLead(e){
     demo: DEMO,
     source: DEMO ? "ulises-realty-DEMO" : "ulises-realty-site"
   };
-  let scheduled = "";
+  const t = (en,es)=> LANG==="es"?es:en;
+  // A number Sofia can't dial must be fixed here, not silently lost on the server.
+  const pd = payload.phone.replace(/\D/g,"");
+  const ten = pd.length===11 && pd[0]==="1" ? pd.slice(1) : pd;
+  if(ten.length!==10 || "01".includes(ten[0]) || "01".includes(ten[3])){
+    alert(t("Please enter a 10-digit US phone number so Sofia can call you.",
+            "Escribe un teléfono de EE.UU. de 10 dígitos para que Sofía pueda llamarte."));
+    btn.disabled = false; return false;
+  }
+  let scheduled = "", failed = false, again = false;
   if(LEAD_ENDPOINT){
     try{
       const r = await fetch(LEAD_ENDPOINT, {
@@ -1090,9 +1113,21 @@ async function submitLead(e){
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify(payload)
       });
-      const d = await r.json();
+      const d = await r.json().catch(()=>({}));
+      if(!r.ok || d.error) failed = true;
       scheduled = d.scheduled || "";
-    }catch(err){ /* still show success — lead alert has server-side fallback */ }
+      again = d.call === "rate-limited";
+    }catch(err){ failed = true; }
+  }
+  if(failed){
+    alert(t("That didn't go through. Check your info and try again, or call or text (505) 520-2840.",
+            "No se pudo enviar. Revisa tus datos e intenta de nuevo, o llama o manda texto al (505) 520-2840."));
+    btn.disabled = false; return false;
+  }
+  if(again){
+    alert(t("We already have your request. Ulises will reach out shortly.",
+            "Ya tenemos tu solicitud. Ulises se comunicará contigo pronto."));
+    btn.disabled = false; return false;
   }
   document.getElementById("formFields").style.display = "none";
   if(scheduled){
