@@ -135,8 +135,9 @@ def hot_sheet(limit=12, days=7, saved_search_id=None):
         return []
     sid = saved_search_id or os.environ.get("SPARK_HOTSHEET_ID")
     if sid:
-        # UNVERIFIED endpoint shape — confirm with spark_probe.py.
-        data = _get(f"/savedsearches/{sid}/listings", {"_limit": limit, "_expand": "Photos"})
+        # /savedsearches/{id}/listings 404s on GEPAR (probed 8/30); this is the
+        # form that answered 200.
+        data = _get("/listings", {"_savedsearch": sid, "_limit": limit, "_expand": "Photos"})
         return _clean(_results(data))
 
     data = _get("/listings", {

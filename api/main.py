@@ -456,7 +456,7 @@ def api():
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api", "rev": "v12-proven-format"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "v13-tick-visible"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.
@@ -1662,6 +1662,7 @@ def api():
             "retell_signatures": state.get("retell_sig", {}) or {},
             "awaiting_email": len(state.get("awaiting_email", []) or []),
             "sierra_confirming": len(state.get("sierra_confirm", []) or []),
+            "last_tick_ts": state.get("last_tick_ts"),
             "sierra": {"configured": _sierra_configured(),
                        "fail_note": state.get("sierra_fail_note", "")},
             "role": _role(req),
