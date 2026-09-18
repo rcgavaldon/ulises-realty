@@ -75,13 +75,31 @@ def _next_morning_ts():
     return nxt.timestamp()
 
 
+SOFIA_NUMBER = "+19152950548"   # Ulises's Sofia line (9/17): calls go out from it
+
+
+def _call_from() -> str:
+    return SOFIA_NUMBER
+
+
+def _sms_from() -> str:
+    """Texts keep going out from the old 505 (FROM_NUMBER) until the 915's
+    texting registration is approved; the owner flips settings.sms_from then."""
+    s = state.get("settings", {}) or {}
+    return s.get("sms_from") or os.environ["FROM_NUMBER"]
+
+
+def _our_numbers() -> set:
+    return {n for n in (SOFIA_NUMBER, os.environ.get("FROM_NUMBER", "")) if n}
+
+
 def _sms(to: str, text: str):
     import httpx
     try:
         r = httpx.post(
             "https://api.telnyx.com/v2/messages",
             headers={"Authorization": f"Bearer {os.environ['TELNYX_API_KEY']}"},
-            json={"from": os.environ["FROM_NUMBER"], "to": to, "text": text[:1500]},
+            json={"from": _sms_from(), "to": to, "text": text[:1500]},
             timeout=15,
         )
         return r.status_code < 300
@@ -171,7 +189,7 @@ def _place_call(lead: dict) -> str:
     try:
         client = Retell(api_key=os.environ["RETELL_API_KEY"])
         client.call.create_phone_call(
-            from_number=os.environ["FROM_NUMBER"],
+            from_number=_call_from(),
             to_number=lead["phone"],
             override_agent_id=agent_id,
             retell_llm_dynamic_variables={
@@ -456,7 +474,7 @@ def api():
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api", "rev": "v13-tick-visible"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "v14-915"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.
@@ -900,7 +918,7 @@ def api():
                     _st = _st.replace(tzinfo=_Z(TZ))
                 _link = _add_to_cal_link(
                     "Call with Ulises Ortega", _st, _settings()["slot_min"],
-                    "Ulises Ortega, ClearView Realty. Questions? Call or text (505) 520-2840.")
+                    "Ulises Ortega, ClearView Realty. Questions? Call or text (915) 295-0548.")
                 if lang == "es":
                     _sms(phone, f"Confirmado: Ulises Ortega le llamara el {label} (hora de El Paso).\n"
                                 f"Agregar a su calendario: {_link}\n"
@@ -1049,9 +1067,8 @@ def api():
         etype = (body.get("data") or {}).get("event_type")
         if etype and etype != "message.received":
             return {"ok": True}
-        ours = os.environ.get("FROM_NUMBER", "")
         tos = [str(t.get("phone_number") or "") for t in (payload.get("to") or []) if isinstance(t, dict)]
-        if ours and tos and ours not in tos:
+        if tos and not (set(tos) & _our_numbers()):
             return {"ok": True}                  # a different number on the same profile
         frm = (payload.get("from") or {}).get("phone_number") or ""
         text = (payload.get("text") or "").strip()
@@ -1319,7 +1336,7 @@ def api():
             return v or req.query_params.get(key, default) or default
 
         from_number = tp("From", "unknown")
-        to_number = tp("To", os.environ["FROM_NUMBER"])
+        to_number = tp("To", _call_from())
         known = state.get(f"lead:{from_number}", None)
         if known is not None and time.time() - float(known.get("ts") or 0) > LEAD_FRESH_DAYS * 86400:
             known = None   # stale: the number may belong to someone else by now
@@ -1328,7 +1345,7 @@ def api():
         # Only a real call hitting OUR number (Telnyx POSTs the TeXML webhook)
         # may create a record; a GET with query params never does.
         real_call = req.method == "POST" and \
-            to_number[-10:] == os.environ.get("FROM_NUMBER", "")[-10:]
+            to_number[-10:] in {n[-10:] for n in _our_numbers()}
         if known is None and real_call and from_number.startswith("+") and not _blocked(from_number):
             known = {
                 "phone": from_number, "name": "", "lang": "en",
@@ -1663,6 +1680,7 @@ def api():
             "awaiting_email": len(state.get("awaiting_email", []) or []),
             "sierra_confirming": len(state.get("sierra_confirm", []) or []),
             "last_tick_ts": state.get("last_tick_ts"),
+            "numbers": {"calls_from": _call_from(), "texts_from": _sms_from()},
             "sierra": {"configured": _sierra_configured(),
                        "fail_note": state.get("sierra_fail_note", "")},
             "role": _role(req),
@@ -1690,6 +1708,12 @@ def api():
                     pass
         if "cal_id" in body and _role(req) == "owner":
             s["cal_id"] = str(body["cal_id"]).strip()[:120]
+        # Which of our numbers texts go out from (flip to the 915 once its
+        # texting registration is approved). Owner-only, and only our numbers.
+        if "sms_from" in body and _role(req) == "owner":
+            v = norm_phone(str(body["sms_from"] or "")) if body["sms_from"] else ""
+            if not v or v in _our_numbers():
+                s["sms_from"] = v or ""
         # Who gets the lead texts. Owner-only: this points automated texts at a person.
         for k in ("owner_cell", "cc_cell"):
             if k in body and _role(req) == "owner":

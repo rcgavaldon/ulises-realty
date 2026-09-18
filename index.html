@@ -467,7 +467,7 @@
 
         <div class="vnext" id="vCalling">
           <h4>📞 <span data-i18n="v_next_h2">Sofia is calling you now</span></h4>
-          <p data-i18n="v_next_p2">She has your address and these numbers already pulled up — answer <b>(505) 520-2840</b>, that's us. She'll get you the exact county figures and a time with Ulises.</p>
+          <p data-i18n="v_next_p2">She has your address and these numbers already pulled up — answer <b>(915) 295-0548</b>, that's us. She'll get you the exact county figures and a time with Ulises.</p>
         </div>
       </div>
     </div>
@@ -653,7 +653,7 @@
         <div class="success" id="formSuccess">
           <div class="big">📞</div>
           <h3 data-i18n="ok_h">Your phone is about to ring!</h3>
-          <p data-i18n="ok_p">Sofia is calling you now from <b>(505) 520-2840</b> — that's my line, save it. Tell her what you're looking for and I'll have it all before we talk.</p>
+          <p data-i18n="ok_p">Sofia is calling you now from <b>(915) 295-0548</b> — that's my line, save it. Tell her what you're looking for and I'll have it all before we talk.</p>
         </div>
         <div class="success" id="formScheduled">
           <div class="big">🗓️</div>
@@ -673,7 +673,7 @@
         <img src="assets/brokerage-logo.png" alt="ClearView Realty" onerror="this.remove()" style="height:30px;width:auto;margin:4px 0 12px;opacity:.9">
         <p data-i18n="ft_blurb">Ulises Ortega — bilingual REALTOR® serving El Paso, Horizon City, Socorro, Canutillo &amp; Fort Bliss. Sponsored by ClearView Realty — TREC License #855823.</p>
         <p style="margin-top:10px" class="demo-tag" data-i18n="ft_demo">Preview listings and example testimonials shown while the live MLS connection is completed.</p>
-        <p style="margin-top:8px"><b style="color:#c9d6e4">📞 (505) 520-2840</b> — <span data-i18n="ft_phone">answered day &amp; night by Sofia, my AI assistant</span></p>
+        <p style="margin-top:8px"><b style="color:#c9d6e4">📞 (915) 295-0548</b> — <span data-i18n="ft_phone">answered day &amp; night by Sofia, my AI assistant</span></p>
       </div>
       <div>
         <h5 data-i18n="ft_explore">EXPLORE</h5>
@@ -800,13 +800,13 @@ const I18N = {
     v_consent:"Muéstrame mi estimado al instante. Sofía, la asistente de IA de Ulises, puede darme UN seguimiento por llamada y/o texto sobre esta propiedad — tu número nunca se vende ni entra a ninguna lista. Pueden aplicar tarifas. No es condición de compra.",
     v_gate_note:"Ves el estimado de inmediato — y Ulises recibe tus datos para conseguirte las cifras exactas del condado.",
     v_next_h2:"Sofía te está llamando ahora",
-    v_next_p2:"Ya tiene tu dirección y estos números en pantalla — contesta el <b>(505) 520-2840</b>, somos nosotros. Te consigue las cifras exactas del condado y una cita con Ulises.",
+    v_next_p2:"Ya tiene tu dirección y estos números en pantalla — contesta el <b>(915) 295-0548</b>, somos nosotros. Te consigue las cifras exactas del condado y una cita con Ulises.",
     ft_phone:"contestado día y noche por Sofía, mi asistente de IA",
     m_eyebrow:"Videos", m_h2:"Recorridos de Casas y Noticias del Mercado",
     fl_lang:"IDIOMA PREFERIDO", fl_msg:"CUÉNTAME MÁS", fl_msg_ph:"ej. Busco 4 recámaras en el West Side, menos de $400k…",
     fl_consent:"Acepto recibir una llamada y/o mensaje de texto de Ulises y su asistente sobre mi solicitud. Pueden aplicar tarifas de mensajes y datos. No es condición de compra.",
     fl_submit:"Recibir Mi Llamada en 60 Segundos →", fl_note:"⚡ Sofía, mi asistente de IA, te llamará de inmediato.",
-    ok_h:"¡Tu teléfono está por sonar!", ok_p:"Sofía te está llamando ahora del <b>(505) 520-2840</b> — es mi línea, guárdala. Dile qué buscas y yo tendré todo antes de que hablemos.",
+    ok_h:"¡Tu teléfono está por sonar!", ok_p:"Sofía te está llamando ahora del <b>(915) 295-0548</b> — es mi línea, guárdala. Dile qué buscas y yo tendré todo antes de que hablemos.",
     ft_brand:"BIENES RAÍCES EL PASO",
     ft_blurb:"Ulises Ortega — REALTOR® bilingüe sirviendo El Paso, Horizon City, Socorro, Canutillo y Fort Bliss. Patrocinado por ClearView Realty — Licencia TREC #855823.",
     ft_demo:"Listados de vista previa y testimonios de ejemplo mientras se completa la conexión al MLS en vivo.",
@@ -1120,8 +1120,8 @@ async function submitLead(e){
     }catch(err){ failed = true; }
   }
   if(failed){
-    alert(t("That didn't go through. Check your info and try again, or call or text (505) 520-2840.",
-            "No se pudo enviar. Revisa tus datos e intenta de nuevo, o llama o manda texto al (505) 520-2840."));
+    alert(t("That didn't go through. Check your info and try again, or call or text (915) 295-0548.",
+            "No se pudo enviar. Revisa tus datos e intenta de nuevo, o llama o manda texto al (915) 295-0548."));
     btn.disabled = false; return false;
   }
   if(again){
