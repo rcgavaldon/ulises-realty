@@ -454,7 +454,9 @@ def api():
     web = FastAPI()
     web.add_middleware(
         CORSMiddleware,
-        allow_origins=["https://rcgavaldon.github.io"],
+        allow_origins=["https://rcgavaldon.github.io",
+                       "https://www.ulisesortegarealty.com",
+                       "https://ulisesortegarealty.com"],
         allow_methods=["POST", "GET", "OPTIONS"],
         allow_headers=["*"],
     )
