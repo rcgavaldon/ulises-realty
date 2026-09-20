@@ -205,6 +205,8 @@ def _place_call(lead: dict) -> str:
                 "move_date": lead.get("move_date") or "unknown",
                 "lead_level": _lead_level(lead),
                 "during_hours": "yes" if _during_hours() else "no",
+                "last_call": _last_call_line(lead),
+                "booked_for": lead.get("booked_for") or "none",
             },
             metadata={"source": "ulises-realty", "phone": lead["phone"]},
         )
@@ -396,6 +398,11 @@ def _add_to_cal_link(title, start, minutes=20, details=""):
             f"&details={quote_plus(details[:300])}")
 
 
+def _last_call_line(lead) -> str:
+    """Gist of the last call, short enough to ride in a prompt variable."""
+    s = " ".join(str((lead or {}).get("last_summary") or "").split())
+    return s[:400] if s else "none"
+
 def _rich_event(name, phone, purpose, prop, lead, source):
     """Calendar event body Ulises can act on at a glance — not a dry title."""
     lead = lead or {}
@@ -405,6 +412,8 @@ def _rich_event(name, phone, purpose, prop, lead, source):
     summary = f"{flag}Call: {name} — {want}" if purpose == "consult" \
         else f"{flag}{purpose.title()}: {name}" + (f" @ {prop}" if prop else "")
     rows = [f"Lead level: {level.upper()}", f"Phone: {phone}"]
+    if lead.get("email"):
+        rows.append(f"Email: {lead['email']}")
     for label, key in (("Wants", "interest"), ("Pre-qualified", "prequalified"),
                        ("Currently", "own_rent"), ("Move date", "move_date"),
                        ("Property", "address"), ("Language", "lang"),
@@ -476,7 +485,7 @@ def api():
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api", "rev": "v14-915"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "v15-callback-memory"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.
@@ -1242,7 +1251,7 @@ def api():
                     state["retries"] = retries
                     _touch_lead(phone, status="gave_up", next_at=None,
                                 attempts=plan["attempts"])
-                    _sms_owner(f"📵 ULISES DEMO: no answer after {MAX_ATTEMPTS} tries — {lead_rec.get('name','?')} {phone}. Left SMS.")
+                    _sms_owner(f"📵 ULISES{' DEMO' if lead_rec.get('demo') else ''}: no answer after {MAX_ATTEMPTS} tries — {lead_rec.get('name','?')} {phone}. Left SMS.")
             return {"ok": True}
 
         if event == "call_analyzed":
@@ -1254,7 +1263,7 @@ def api():
                 retries.pop(phone, None)
                 state["retries"] = retries
                 _touch_lead(phone, status="opted_out", next_at=None, awaiting_email=False)
-                _sms_owner(f"🚫 ULISES DEMO: {phone} asked not to be contacted. Honored.")
+                _sms_owner(f"🚫 ULISES{' DEMO' if _is_demo(phone) else ''}: {phone} asked not to be contacted. Honored.")
                 return {"ok": True}
             dur = int((call.get("duration_ms") or 0) / 1000)
             direction = "inbound" if call.get("direction") == "inbound" else "callback"
@@ -1266,6 +1275,11 @@ def api():
             summary = (analysis.get("call_summary") or "").strip()
             if summary:
                 lines.append(f"Summary: {summary[:350]}")
+            open_q = (custom.get("open_questions") or "").strip()
+            if open_q.lower() in ("none", "n/a", "unknown"):
+                open_q = ""
+            if open_q:
+                lines.append(f"They asked: {open_q[:300]}")
             rec = call.get("recording_url")
             if rec:
                 lines.append(f"Rec: {rec}")
@@ -1277,7 +1291,8 @@ def api():
             # What the call taught us about someone we didn't have on file.
             _known = state.get(f"lead:{phone}", {}) or {}
             if trusted:          # only Retell-signed details may flow on to the CRM
-                _upd = {"last_summary": "\n".join(lines[1:])[:900]}
+                _upd_q = {"open_questions": open_q[:300]} if open_q else {}
+                _upd = {"last_summary": "\n".join(lines[1:])[:900], **_upd_q}
                 _cn = (custom.get("caller_name") or "").strip()
                 if _cn and _cn.lower() not in ("unknown", "n/a", "none") and not _known.get("name"):
                     _upd["name"] = _cn[:80]
@@ -1395,6 +1410,8 @@ def api():
                     "move_date": (known or {}).get("move_date") or "unknown",
                     "lead_level": _lead_level(known or {}),
                     "during_hours": "yes" if _during_hours() else "no",
+                    "last_call": _last_call_line(known or {}),
+                    "booked_for": (known or {}).get("booked_for") or "none",
                 },
                 agent_override={"retell_llm": {"begin_message": begin}},
             )
@@ -1595,7 +1612,13 @@ def api():
                              "purpose": ("DEMO " + purpose) if demo else purpose,
                              "property": prop})
             state["bookings"] = bookings[-200:]
-            _sms_owner(f"📅 ULISES DEMO BOOKED\n{purpose} — {name} {phone}\n{start.strftime('%a %b %d %I:%M %p')} MT\n{prop or ''}\n(tentative — confirm with lead)")
+            kind = {"consult": "PHONE CONSULT", "valuation": "HOME VALUATION",
+                    "showing": "SHOWING (IN PERSON)"}.get(purpose, purpose.upper())
+            _sms_owner(f"📅 {'DEMO — ' if demo else ''}TENTATIVE {kind}\n"
+                       f"{name} {phone}\n"
+                       f"{start.strftime('%a %b %d %I:%M %p')} MT\n"
+                       + (f"{prop}\n" if prop else "")
+                       + "Not confirmed yet — call them to lock it in.")
             return {"result": f"Booked tentatively for {start.strftime('%A %B %d at %I:%M %p')}. Tell the caller Ulises will confirm shortly."}
         except Exception as e:
             return {"result": f"Could not book ({str(e)[:80]}). Take their preferred time and tell them Ulises will confirm it personally."}
@@ -1660,7 +1683,8 @@ def api():
                        ("name", "phone", "interest", "lang", "address",
                         "prequalified", "own_rent", "move_date", "ts",
                         "status", "attempts", "next_at", "booked_for", "demo",
-                        "email", "source", "sierra_status", "sierra_lead_id", "awaiting_email")}
+                        "email", "source", "sierra_status", "sierra_lead_id", "awaiting_email",
+                        "open_questions")}
                 row["level"] = _lead_level(l)
                 row["calls"] = (l.get("calls") or [])[-6:][::-1]
                 row["status_label"] = STATUS_LABEL.get(l.get("status", ""), "New")
