@@ -189,6 +189,7 @@ TOOLS = [
         "description": "Search Ulises Ortega's current featured listings and his hot list. Use when the caller mentions an area, budget, a specific home from the website, or asks what's new / moving fast (then set hot_only true). Never state listing facts without calling this first.",
         "url": f"{MODAL_URL}/tools/lookup-listings",
         "speak_during_execution": True,
+        "speak_after_execution": True,
         "execution_message_description": "One moment, let me check Ulises's current listings.",
         "parameters": {
             "type": "object",
@@ -208,6 +209,7 @@ TOOLS = [
         "description": "Estimate what a specific address is worth and what its property taxes run per year in El Paso County. Use for sellers asking what their home is worth, for buyers asking what taxes would cost them on a home, and any time an address comes up. Always present the result as an estimate.",
         "url": f"{MODAL_URL}/tools/property-lookup",
         "speak_during_execution": True,
+        "speak_after_execution": True,
         "execution_message_description": "Let me pull up the numbers on that address.",
         "parameters": {
             "type": "object",
@@ -227,6 +229,7 @@ TOOLS = [
         "description": "Compare two addresses side by side — estimated value and estimated yearly property taxes. Use when a caller is deciding between two homes or two areas.",
         "url": f"{MODAL_URL}/tools/compare-properties",
         "speak_during_execution": True,
+        "speak_after_execution": True,
         "execution_message_description": "Let me put those two side by side.",
         "parameters": {
             "type": "object",
@@ -247,6 +250,7 @@ TOOLS = [
         "description": "Get Ulises's open appointment times for a day (checks his business hours AND his live calendar). Use before offering times, or when a requested slot is taken.",
         "url": f"{MODAL_URL}/tools/check-availability",
         "speak_during_execution": True,
+        "speak_after_execution": True,
         "execution_message_description": "Let me see when Ulises is free.",
         "parameters": {
             "type": "object",
@@ -262,6 +266,7 @@ TOOLS = [
         "description": "Book a tentative PHONE CALL with Ulises on his calendar (purpose consult). Only book an in-person showing if the caller explicitly insists. Only call once you have a specific day and time from the caller.",
         "url": f"{MODAL_URL}/tools/book-showing",
         "speak_during_execution": True,
+        "speak_after_execution": True,
         "execution_message_description": "Let me get that on Ulises's calendar.",
         "parameters": {
             "type": "object",
@@ -288,6 +293,7 @@ TOOLS = [
             "agent_detection_timeout_ms": 30000,
             "transfer_ring_duration_ms": 30000,
             "on_hold_music": "relaxing_sound",
+            "enable_bridge_audio_cue": True,
             "private_handoff_option": {
                 "type": "prompt",
                 "prompt": (
@@ -300,6 +306,7 @@ TOOLS = [
             },
         },
         "speak_during_execution": True,
+        "speak_after_execution": True,
         "execution_message_description": "Tell the caller you're seeing if Ulises is free right now and to hold for just a moment.",
     },
 ]
