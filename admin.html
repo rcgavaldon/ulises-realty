@@ -263,7 +263,8 @@ async function load(){
               unassigned:["Sierra: UNASSIGNED","background:#fde2dd;color:#8a2a1c"],
               exists:["Sierra: already there",""], no_email:["Sierra: no email",""],
               error:["Sierra: retrying","background:#fff3cd"], create_unknown:["Sierra: re-checking","background:#fff3cd"],
-              inflight:["Sierra: adding…",""]};
+              inflight:["Sierra: adding…",""],
+              reassigned:["Sierra: moved to another agent","background:#fde2dd;color:#8a2a1c"]};
   const sierraTag = l => {
     if(l.awaiting_email) return ' <span class="tag" style="background:#fff3cd">waiting on email</span>';
     const z = SZ[l.sierra_status]; if(!z) return "";
@@ -281,7 +282,8 @@ async function load(){
       const bits = [clock(c.ts), c.outcome + (c.seconds?` (${c.seconds}s)`:"")];
       if(c.attempt) bits.push(`try ${c.attempt}`);
       if(c.summary) bits.push(esc(c.summary));
-      if(c.recording) bits.push(`<a href="${c.recording}" target="_blank" rel="noopener">recording</a>`);
+      // only a plain https link: a forged webhook must never inject markup here
+      if(/^https:\/\/[^\s"'<>]+$/.test(c.recording||"")) bits.push(`<a href="${c.recording}" target="_blank" rel="noopener">recording</a>`);
       return `<div style="padding:3px 0;border-bottom:1px dashed var(--line)">${bits.join(" · ")}</div>`;
     }).join("") || `<div style="color:var(--muted)">No calls logged yet.</div>`;
     return `<tr onclick="document.getElementById('h${i}').classList.toggle('hide')" style="cursor:pointer">
@@ -290,7 +292,7 @@ async function load(){
       <td><span class="tag">${esc(l.interest)}</span> ${l.lang==="es"?"🇲🇽":""}</td>
       <td>${next}</td><td>${fmtTs(l.ts)}</td>
       <td>${esc(l.address)||esc(l.move_date)||"—"}</td></tr>
-    <tr id="h${i}" class="hide"><td colspan="8" style="background:var(--paper);font-size:.78rem">${hist}</td></tr>`;
+    <tr id="h${i}" class="hide"><td colspan="8" style="background:var(--paper);font-size:.78rem">${l.open_questions?`<div style="padding:3px 0;font-weight:700">❓ They asked: ${esc(l.open_questions)}</div>`:""}${hist}</td></tr>`;
   }).join("") || `<tr><td colspan="8" style="color:var(--muted)">No leads yet.</td></tr>`;
 
   document.getElementById("bookings").innerHTML = (d.bookings||[]).map(b=>

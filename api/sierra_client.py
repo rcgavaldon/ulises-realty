@@ -103,15 +103,6 @@ def _existing(email: str):
     return None
 
 
-def _lead_type(interest: str) -> int:   # unused: proven format sends leadType 1
-    k = (interest or "").lower()
-    if "buysell" in k or ("buy" in k and "sell" in k):
-        return 3
-    if "sell" in k or "value" in k:
-        return 2
-    return 1
-
-
 def push_lead(lead: dict, adopt: bool = False) -> dict:
     """Website lead -> Sierra lead under our agent.
 

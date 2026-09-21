@@ -465,6 +465,7 @@
         <div class="vsave" id="vSave" style="display:none"></div>
         <p class="vdisc" data-i18n="v_disc">Estimate only — modeled from El Paso County area values and current tax rates. Not an official appraisal, tax statement, or offer. Ulises will pull your exact county figures and a full comparative market analysis on request.</p>
 
+        <div class="vnext" id="vCallMsg" style="display:none"></div>
         <div class="vnext" id="vCalling">
           <h4>📞 <span data-i18n="v_next_h2">Sofia is calling you now</span></h4>
           <p data-i18n="v_next_p2">She has your address and these numbers already pulled up — answer <b>(915) 295-0548</b>, that's us. She'll get you the exact county figures and a time with Ulises.</p>
@@ -489,13 +490,13 @@
         <div class="ic">🏷️</div>
         <h3 data-i18n="s2_h">For Sellers</h3>
         <p data-i18n="s2_p">Professional photos, real pricing strategy, and marketing that actually reaches buyers. I tell you the truth about price — not just what you want to hear.</p>
-        <a href="#contact" data-i18n="s2_a">Get your home sold →</a>
+        <a href="#contact" onclick="pickInterest('sell')" data-i18n="s2_a">Get your home sold →</a>
       </div>
       <div class="svc">
         <div class="ic">📊</div>
         <h3 data-i18n="s3_h">Free Home Valuation</h3>
         <p data-i18n="s3_p">Curious what your house is worth in today's market? I'll run a real comparative market analysis — no obligation, no spam, just the number.</p>
-        <a href="#contact" data-i18n="s3_a">Get my home's value →</a>
+        <a href="#contact" onclick="pickInterest('value')" data-i18n="s3_a">Get my home's value →</a>
       </div>
       <div class="svc">
         <div class="ic">🔑</div>
@@ -521,7 +522,9 @@
   </div>
 </section>
 
-<section>
+<!-- Hidden until Ulises has REAL reviews to show: invented testimonials on a
+     licensed agent's live site are a legal problem (FTC rule on fake reviews). -->
+<section style="display:none">
   <div class="wrap">
     <div class="eyebrow" data-i18n="t_eyebrow">Client Stories</div>
     <h2 data-i18n="t_h2">El Pasoans I've Helped Home</h2>
@@ -655,6 +658,11 @@
           <h3 data-i18n="ok_h">Your phone is about to ring!</h3>
           <p data-i18n="ok_p">Sofia is calling you now from <b>(915) 295-0548</b> — that's my line, save it. Tell her what you're looking for and I'll have it all before we talk.</p>
         </div>
+        <div class="success" id="formSoft">
+          <div class="big">✅</div>
+          <h3 data-i18n="soft_h">Got it!</h3>
+          <p data-i18n="soft_p">We'll call you shortly from <b>(915) 295-0548</b> — that's my line, save it.</p>
+        </div>
         <div class="success" id="formScheduled">
           <div class="big">🗓️</div>
           <h3 data-i18n="sch_h">You're on the calendar!</h3>
@@ -742,7 +750,6 @@ const I18N = {
     v_next_h:"¿Quieres los números exactos?",
     v_next_p:"Déjame tu nombre y teléfono — Sofía te llama en un minuto con esto en pantalla, y Ulises te da seguimiento con las cifras reales del condado y un análisis de mercado completo.",
     v_next_cta:"Llámame Con Mis Números →",
-    v_ok_p:"Sofía te está llamando de un número (505) con tu dirección ya en pantalla.",
     v_err:"No pude calcular esa dirección. Revísala o mándame tu número y lo hago manualmente.",
     v_basis_zip:"Basado en tu zona", v_basis_sqft:"pies²", v_basis_est:"pies² (tamaño típico de la zona)", v_yr:"al año",
     v_school:"Distrito escolar", v_other:"Ciudad, condado, hospital y colegio",
@@ -806,6 +813,7 @@ const I18N = {
     fl_lang:"IDIOMA PREFERIDO", fl_msg:"CUÉNTAME MÁS", fl_msg_ph:"ej. Busco 4 recámaras en el West Side, menos de $400k…",
     fl_consent:"Acepto recibir una llamada y/o mensaje de texto de Ulises y su asistente sobre mi solicitud. Pueden aplicar tarifas de mensajes y datos. No es condición de compra.",
     fl_submit:"Recibir Mi Llamada en 60 Segundos →", fl_note:"⚡ Sofía, mi asistente de IA, te llamará de inmediato.",
+    soft_h:"¡Listo!", soft_p:"Te llamaremos en breve del <b>(915) 295-0548</b> — es mi línea, guárdala.",
     ok_h:"¡Tu teléfono está por sonar!", ok_p:"Sofía te está llamando ahora del <b>(915) 295-0548</b> — es mi línea, guárdala. Dile qué buscas y yo tendré todo antes de que hablemos.",
     ft_brand:"BIENES RAÍCES EL PASO",
     ft_blurb:"Ulises Ortega — REALTOR® bilingüe sirviendo El Paso, Horizon City, Socorro, Canutillo y Fort Bliss. Patrocinado por ClearView Realty — Licencia TREC #855823.",
@@ -845,6 +853,10 @@ function toggleLang(){
   // Sofia calls in the language they're reading, unless they chose one by hand
   const ls = document.querySelector('#leadForm select[name="language"]');
   if(ls && !ls.dataset.touched) ls.value = LANG;
+  renderSlots();
+  // applyLang reset the button to the 60-second text: put back the one they chose
+  const ct = document.querySelector('#leadForm select[name="calltime"]');
+  if(ct) onCallTime(ct);
 }
 
 // ── Listings render (sample module — replaced by IDX widget later) ──────────
@@ -953,11 +965,24 @@ let LAST_VALUE = null;      // last estimate, forwarded with the lead so Sofia h
 const VALUE_LEAD_SENT = {}; // phone (10 digits) -> lead already sent this visit
 let LAST_ADDRESS = "";
 const S = k => (LANG==="es" && I18N.es[k]) ? I18N.es[k] : null;
+// a number Sofia can actually dial: 10 digits, area code and exchange not 0/1
+const okPhone = s => { const p = String(s||"").replace(/\D/g,""), x = p.length===11 && p[0]==="1" ? p.slice(1) : p;
+  return x.length===10 && !"01".includes(x[0]) && !"01".includes(x[3]); };
+const BAD_PHONE = () => LANG==="es"
+  ? "Escribe un teléfono de EE.UU. de 10 dígitos para que Sofía pueda llamarte."
+  : "Please enter a 10-digit US phone number so Sofia can call you.";
+// the value panel's "Sofia is calling you now" is only shown when it's true
+function valueCallMsg(html){
+  document.getElementById("vCalling").style.display = html ? "none" : "";
+  const m = document.getElementById("vCallMsg");
+  m.innerHTML = html || ""; m.style.display = html ? "" : "none";
+}
 
 async function runValue(e){
   e.preventDefault();
   const f = e.target;
   const btn = document.getElementById("valueBtn");
+  if(!okPhone(f.vphone.value)){ alert(BAD_PHONE()); return false; }
   btn.disabled = true;
   LAST_ADDRESS = f.address.value.trim();
   try{
@@ -980,17 +1005,31 @@ async function runValue(e){
     const vkey = f.vphone.value.replace(/\D/g,"").slice(-10);
     if(VALUE_LEAD_SENT[vkey]) { btn.disabled = false; return false; }
     VALUE_LEAD_SENT[vkey] = true;
-    fetch(LEAD_ENDPOINT, {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({
-        name: f.vname.value.trim(), phone: f.vphone.value.trim(),
-        email: f.vemail.value.trim(), interest: "value", language: LANG,
-        address: LAST_ADDRESS, valuation: d,
-        message: "Ran the home value tool for " + LAST_ADDRESS,
-        consent: f.vconsent.checked, demo: DEMO,
-        source: DEMO ? "ulises-realty-value-tool-DEMO" : "ulises-realty-value-tool"
-      })
-    }).catch(()=>{});
+    try{
+      const lr = await fetch(LEAD_ENDPOINT, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          name: f.vname.value.trim(), phone: f.vphone.value.trim(),
+          email: f.vemail.value.trim(), interest: "value", language: LANG,
+          address: LAST_ADDRESS, valuation: d,
+          message: "Ran the home value tool for " + LAST_ADDRESS,
+          consent: f.vconsent.checked, demo: DEMO,
+          source: DEMO ? "ulises-realty-value-tool-DEMO" : "ulises-realty-value-tool"
+        })
+      });
+      const ld = await lr.json().catch(()=>({}));
+      if(!lr.ok || ld.error) throw 0;
+      const lc = String(ld.call||"");
+      valueCallMsg(/^(failed|skipped|rate-limited)/.test(lc)
+        ? (LANG==="es" ? "<p>¡Listo! Te llamaremos en breve del <b>(915) 295-0548</b>.</p>"
+                       : "<p>Got it! We'll call you shortly from <b>(915) 295-0548</b>.</p>")
+        : "");
+    }catch(_){
+      delete VALUE_LEAD_SENT[vkey];              // nothing reached us: let them try again
+      valueCallMsg(LANG==="es"
+        ? "<p>No pudimos avisar a Sofía. Llama o manda texto al <b>(915) 295-0548</b>.</p>"
+        : "<p>We couldn't reach Sofia. Call or text <b>(915) 295-0548</b>.</p>");
+    }
   }catch(err){
     alert(S("v_err") || "I couldn't price that address. Double-check it, or leave me your number and I'll do it by hand.");
   }
@@ -1041,17 +1080,24 @@ function onIntent(v){
 
 // ── Call-time picker (direct booking skips the insta-call) ──────────────────
 // Slots are prefetched at page load so the picker opens instantly.
-let SLOTS_LOADED = false, SLOTS_PROMISE = null;
+let SLOTS_LOADED = false, SLOTS_PROMISE = null, SLOTS = null;
+const fmtSlot = (iso, long) => new Date(iso).toLocaleString(LANG==="es" ? "es-MX" : "en-US",
+  {timeZone:"America/Denver", weekday: long ? "long" : "short", month:"short", day:"numeric",
+   hour:"numeric", minute:"2-digit"});
 function prefetchSlots(){
   SLOTS_PROMISE = fetch(API_BASE + "/slots" + (DEMO?"?demo=1":"")).then(r=>r.json()).then(d=>{
-    const s = document.getElementById("slotSel");
-    if((d.slots||[]).length){
-      s.innerHTML = d.slots.map(x=>`<option value="${x.iso}">${x.label}</option>`).join("");
-      SLOTS_LOADED = true;
-    } else {
-      s.innerHTML = `<option value="">${LANG==="es"?"no hay horarios — Sofía te llama ya":"no open times — Sofia will call you now"}</option>`;
-    }
+    SLOTS = d.slots || [];
+    SLOTS_LOADED = SLOTS.length > 0;
+    renderSlots();
   }).catch(()=>{ /* ASAP path still works */ });
+}
+function renderSlots(){
+  if(SLOTS === null) return;                     // not fetched yet
+  const s = document.getElementById("slotSel"), keep = s.value;
+  s.innerHTML = SLOTS.length
+    ? SLOTS.map(x=>`<option value="${x.iso}">${fmtSlot(x.iso)}</option>`).join("")
+    : `<option value="">${LANG==="es"?"no hay horarios — Sofía te llama ya":"no open times — Sofia will call you now"}</option>`;
+  if(keep && SLOTS.some(x=>x.iso===keep)) s.value = keep;
 }
 async function onCallTime(sel){
   const isPick = sel.value === "pick";
@@ -1098,14 +1144,8 @@ async function submitLead(e){
   };
   const t = (en,es)=> LANG==="es"?es:en;
   // A number Sofia can't dial must be fixed here, not silently lost on the server.
-  const pd = payload.phone.replace(/\D/g,"");
-  const ten = pd.length===11 && pd[0]==="1" ? pd.slice(1) : pd;
-  if(ten.length!==10 || "01".includes(ten[0]) || "01".includes(ten[3])){
-    alert(t("Please enter a 10-digit US phone number so Sofia can call you.",
-            "Escribe un teléfono de EE.UU. de 10 dígitos para que Sofía pueda llamarte."));
-    btn.disabled = false; return false;
-  }
-  let scheduled = "", failed = false, again = false;
+  if(!okPhone(payload.phone)){ alert(BAD_PHONE()); btn.disabled = false; return false; }
+  let scheduled = "", failed = false, again = false, soft = false;
   if(LEAD_ENDPOINT){
     try{
       const r = await fetch(LEAD_ENDPOINT, {
@@ -1117,6 +1157,7 @@ async function submitLead(e){
       if(!r.ok || d.error) failed = true;
       scheduled = d.scheduled || "";
       again = d.call === "rate-limited";
+      soft = /^(failed|skipped)/.test(String(d.call||""));   // received, but no call this second
     }catch(err){ failed = true; }
   }
   if(failed){
@@ -1131,10 +1172,11 @@ async function submitLead(e){
   }
   document.getElementById("formFields").style.display = "none";
   if(scheduled){
-    document.getElementById("schWhen").textContent = scheduled;
+    // shown in the language they're reading, in El Paso time
+    document.getElementById("schWhen").textContent = payload.slot_iso ? fmtSlot(payload.slot_iso, true) : scheduled;
     document.getElementById("formScheduled").style.display = "block";
   } else {
-    document.getElementById("formSuccess").style.display = "block";
+    document.getElementById(soft ? "formSoft" : "formSuccess").style.display = "block";
   }
   return false;
 }

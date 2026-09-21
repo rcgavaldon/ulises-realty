@@ -157,10 +157,12 @@ def _bump_sig(ok: bool):
     """Count signed vs unsigned Retell events so the first real call after a
     deploy proves the key is right (shown on the admin overview)."""
     s = state.get("retell_sig", {}) or {}
+    had_ok = bool(s.get("ok"))
     k = "ok" if ok else "bad"
     s[k] = int(s.get(k, 0)) + 1
     s[f"last_{k}_ts"] = time.time()
     state["retell_sig"] = s
+    return had_ok
 
 
 def _sierra_configured() -> bool:
@@ -206,7 +208,7 @@ def _place_call(lead: dict) -> str:
                 "lead_level": _lead_level(lead),
                 "during_hours": "yes" if _during_hours() else "no",
                 "last_call": _last_call_line(lead),
-                "booked_for": lead.get("booked_for") or "none",
+                "booked_for": _booked_line(lead),
             },
             metadata={"source": "ulises-realty", "phone": lead["phone"]},
         )
@@ -243,13 +245,20 @@ def _settings():
     return s
 
 
+MIN_NOTICE_MIN = 30   # never offer or book a slot that starts sooner than this
+
+_CAL_CREDS = None     # one set of credentials per container, so the token is reused
+
+
 def _cal_svc():
-    from google.oauth2 import service_account
+    global _CAL_CREDS
     from googleapiclient.discovery import build
-    info = json.loads(os.environ["GCP_SA_JSON"])
-    creds = service_account.Credentials.from_service_account_info(
-        info, scopes=["https://www.googleapis.com/auth/calendar"])
-    return build("calendar", "v3", credentials=creds)
+    if _CAL_CREDS is None:
+        from google.oauth2 import service_account
+        _CAL_CREDS = service_account.Credentials.from_service_account_info(
+            json.loads(os.environ["GCP_SA_JSON"]),
+            scopes=["https://www.googleapis.com/auth/calendar"])
+    return build("calendar", "v3", credentials=_CAL_CREDS)
 
 
 def _cal_id(demo: bool = False):
@@ -296,7 +305,8 @@ def _open_slots(day_dt, limit=3, demo=False):
     svc = _cal_svc()
     day_start = day_dt.replace(hour=0, minute=0, second=0, microsecond=0)
     busy = _busy_windows(svc, day_start, day_start + timedelta(days=1), demo)
-    now = datetime.now(tz)
+    earliest = datetime.now(tz) + timedelta(minutes=MIN_NOTICE_MIN)
+    buf = timedelta(minutes=s["buffer_min"])
     out = []
     for w in windows:
         try:
@@ -307,8 +317,9 @@ def _open_slots(day_dt, limit=3, demo=False):
         cur = day_dt.replace(hour=h1, minute=m1, second=0, microsecond=0)
         wend = day_dt.replace(hour=h2, minute=m2, second=0, microsecond=0)
         while cur + dur <= wend:
-            pad_end = cur + dur + timedelta(minutes=s["buffer_min"])
-            if cur > now and not any(b0 < pad_end and b1 > cur for b0, b1 in busy):
+            # keep `buffer` clear on BOTH sides of anything already on the calendar
+            if cur >= earliest and not any(b0 < cur + dur + buf and b1 > cur - buf
+                                           for b0, b1 in busy):
                 out.append(cur)
                 if len(out) >= limit:
                     return out
@@ -403,6 +414,29 @@ def _last_call_line(lead) -> str:
     s = " ".join(str((lead or {}).get("last_summary") or "").split())
     return s[:400] if s else "none"
 
+
+def _booked_line(lead) -> str:
+    """The appointment Sofia should know about: only one still ahead of us.
+    A past booking is history, never a reason to refuse a new one."""
+    try:
+        from datetime import datetime, timezone
+        if datetime.fromisoformat((lead or {}).get("booked_iso") or "") > datetime.now(timezone.utc):
+            return lead.get("booked_for") or "none"
+    except (ValueError, TypeError):
+        pass
+    return "none"
+
+
+_DIAS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
+_MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+
+
+def _label_es(dt) -> str:
+    """'lunes 21 de sep a las 10:00 AM' - ASCII, for the Spanish confirmation text."""
+    return f"{_DIAS[dt.weekday()]} {dt.day} de {_MESES[dt.month - 1]} a las " \
+           f"{dt.strftime('%I:%M %p').lstrip('0')}"
+
+
 def _rich_event(name, phone, purpose, prop, lead, source):
     """Calendar event body Ulises can act on at a glance — not a dry title."""
     lead = lead or {}
@@ -456,7 +490,7 @@ INTEREST = {
 )
 @modal.asgi_app()
 def api():
-    from fastapi import FastAPI, Request
+    from fastapi import BackgroundTasks, FastAPI, Request
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import JSONResponse, Response
 
@@ -485,7 +519,7 @@ def api():
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api", "rev": "v15-callback-memory"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "v16-review-fixes"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.
@@ -493,14 +527,33 @@ def api():
     def cron_retry(req: Request):
         if not _cron_ok(req):
             return JSONResponse({"error": "forbidden"}, status_code=403)
-        # each job on its own: one failing never skips the others
-        for job in (retry_worker, email_followup_worker, _sierra_stuck_scan,
-                    _sierra_retry_tick, _sierra_confirm_tick):
+        # Cloudflare and GitHub both fire this: one tick at a time, or the same
+        # due lead could be dialed twice.
+        now = time.time()
+        try:
+            got = state.put("tick_lock", now, skip_if_exists=True)
+        except (AttributeError, TypeError):          # plain dict in offline tests
+            got = "tick_lock" not in state
+            if got:
+                state["tick_lock"] = now
+        if not got:
+            if now - float(state.get("tick_lock") or 0) < 300:
+                return {"ok": True, "skipped": "tick running"}
+            state["tick_lock"] = now                 # a dead tick's lock: take it over
+        try:
+            # each job on its own: one failing never skips the others
+            for job in (retry_worker, email_followup_worker, _sierra_stuck_scan,
+                        _sierra_retry_tick, _sierra_confirm_tick):
+                try:
+                    job()
+                except Exception as e:
+                    print(f"tick {job.__name__} failed: {e}")
+            state["last_tick_ts"] = time.time()
+        finally:
             try:
-                job()
-            except Exception as e:
-                print(f"tick {job.__name__} failed: {e}")
-        state["last_tick_ts"] = time.time()
+                state.pop("tick_lock")
+            except Exception:
+                pass
         return {"ok": True}
 
     @web.post("/cron/weekly")
@@ -556,8 +609,7 @@ def api():
                 break
         return {"slots": out[:8], "slot_min": _settings()["slot_min"]}
 
-    def _direct_book(name: str, phone: str, start_iso: str, lang: str, note: str,
-                     demo: bool = False):
+    def _direct_book(name: str, phone: str, start_iso: str, demo: bool = False):
         """Site picked a slot -> event on the calendar, no instant call.
         Returns label on success, None if the slot is gone."""
         from datetime import datetime, timedelta
@@ -619,13 +671,19 @@ def api():
             if time.time() - float(state.get(claim) or 0) < 120:
                 return sierra_client.describe({"status": "inflight"})
             state[claim] = time.time()                 # stale claim: take it over
-        _touch_lead(phone, sierra_status="inflight", sierra_inflight_ts=time.time())
+        # a create that timed out (or a push that died) may already exist: adopt it
+        adopt = adopt or cur.get("sierra_status") in ("create_unknown", "inflight")
+        _ts = time.time()
+        state["sierra_push_ts"] = _ts                   # lets the stuck-scan skip idle ticks
+        _touch_lead(phone, sierra_status="inflight", sierra_inflight_ts=_ts)
         try:
             res = sierra_client.push_lead(lead_rec, adopt=adopt)
         except Exception as e:
             sierra_client._note_fail(f"push: {str(e)[:120]}")
             res = {"status": "error"}
         upd = {"sierra_status": res.get("status") or "error"}
+        if upd["sierra_status"] == "error" and adopt:
+            upd["sierra_status"] = "create_unknown"     # it may exist: keep adopting on retry
         if res.get("status") in ("sent", "routing"):
             upd["sierra_lead_id"] = res["lead_id"]
             upd["sierra_created_ts"] = time.time()
@@ -644,6 +702,10 @@ def api():
         elif res.get("status") == "wrong_agent":
             upd["sierra_misrouted_id"] = res.get("lead_id")   # kept for the owner; never used for notes
         _touch_lead(phone, **upd)
+        try:
+            state.pop(claim)                            # done: a corrected resubmit may push now
+        except Exception:
+            pass
         return sierra_client.describe(res)
 
     SIERRA_ROUTE_ALERT_MIN = 15   # still unassigned after this -> owner alert
@@ -719,6 +781,13 @@ def api():
         _BG_TASKS.add(t)
         t.add_done_callback(_BG_TASKS.discard)
 
+    async def _finish_lead(lead_rec: dict, card: list):
+        """Runs after the visitor already has their answer: the Sierra push, the
+        routing check, then the owner card carrying the Sierra line."""
+        line = await asyncio.to_thread(_sierra_push, lead_rec)
+        _bg(_confirm_soon(lead_rec["phone"]))
+        await asyncio.to_thread(_sms_owner, "\n".join(card + ([line] if line else [])))
+
     def _sierra_retry_tick():
         """Cron: re-push leads whose Sierra create failed (Sierra down,
         timeout). Up to 3 tries per lead, then the owner adds it by hand."""
@@ -751,6 +820,8 @@ def api():
         """A push whose container died mid-flight stays 'inflight' forever.
         Hand those to the retry queue (which adopts the lead if it was made)."""
         now = time.time()
+        if float(state.get("sierra_scan_ts") or 0) > float(state.get("sierra_push_ts") or 0) + 300:
+            return                     # nothing pushed since the last full scan: skip 100 reads
         q = state.get("sierra_retry", []) or []
         add = []
         for ph in (state.get("lead_index", []) or [])[-100:]:
@@ -760,6 +831,7 @@ def api():
                 add.append(ph)
         if add:
             state["sierra_retry"] = (q + add)[-100:]
+        state["sierra_scan_ts"] = now
 
     def _spoken_email(s: str) -> str:
         """'john dot doe at gmail dot com' -> john.doe@gmail.com, else ''."""
@@ -804,7 +876,7 @@ def api():
 
     # ── form submit ──────────────────────────────────────────────────────────
     @web.post("/lead")
-    async def lead(req: Request):
+    async def lead(req: Request, bg: BackgroundTasks):
         try:
             body = await req.json()
         except Exception:
@@ -823,6 +895,11 @@ def api():
                             "Reach out by hand.", every=3600)
             return JSONResponse({"error": "name and valid US phone required"}, status_code=400)
         if _blocked(phone):
+            # opted out before but came back on their own: a human decides, Sofia contacts nobody
+            _alert_once(f"blocked_lead:{phone}",
+                        f"{'DEMO - ' if body.get('demo') else ''}\U0001F6AB ULISES SITE: {name} {phone} "
+                        f"submitted the form but is opted out ({_blocked(phone)}). Sofia did not call "
+                        f"or text. {str(body.get('email', ''))[:60]}", every=86400)
             return JSONResponse({"ok": True, "call": "skipped"})
 
         lang = "es" if str(body.get("language", "en")).lower().startswith("es") else "en"
@@ -890,9 +967,13 @@ def api():
             for k in ("sierra_lead_id", "sierra_status", "sierra_inflight_ts", "sierra_misrouted_id",
                       "sierra_created_ts", "sierra_attempts", "email_asked_ts", "awaiting_email",
                       "email_candidate", "email_nudges", "email_nudged", "email_reminded_ts",
-                      "email_received_ts", "email_gave_up"):
+                      "email_received_ts", "email_gave_up",
+                      # what Sofia knows about them: a resubmit must not wipe it
+                      "last_summary", "open_questions", "booked_for", "booked_iso"):
                 if k in prev:
                     lead_rec[k] = prev[k]
+            if _booked_line(prev) != "none":
+                lead_rec["status"] = "booked"          # still booked: the dashboard keeps saying so
             if prev.get("calls"):
                 lead_rec["calls"] = prev["calls"]
             if not lead_rec["email"] and prev.get("email"):
@@ -915,23 +996,21 @@ def api():
         # They picked a slot on the site -> book it, no instant call.
         slot_iso = str(body.get("slot_iso", "")).strip()
         if slot_iso:
-            label = _direct_book(name, phone, slot_iso, lang,
-                                 f"Wants: {interest_key}. Note: {lead_rec['message'][:150]}",
-                                 demo=demo)
+            label = _direct_book(name, phone, slot_iso, demo=demo)
             if label:
                 _bump_stat("leads")
-                _touch_lead(phone, status="booked", attempts=0, next_at=None,
-                            booked_for=label)
                 from datetime import datetime as _dt
                 from zoneinfo import ZoneInfo as _Z
                 _st = _dt.fromisoformat(slot_iso)
                 if _st.tzinfo is None:
                     _st = _st.replace(tzinfo=_Z(TZ))
+                _touch_lead(phone, status="booked", attempts=0, next_at=None,
+                            booked_for=label, booked_iso=_st.isoformat())
                 _link = _add_to_cal_link(
                     "Call with Ulises Ortega", _st, _settings()["slot_min"],
                     "Ulises Ortega, ClearView Realty. Questions? Call or text (915) 295-0548.")
                 if lang == "es":
-                    _sms(phone, f"Confirmado: Ulises Ortega le llamara el {label} (hora de El Paso).\n"
+                    _sms(phone, f"Confirmado: Ulises Ortega le llamara el {_label_es(_st)} (hora de El Paso).\n"
                                 f"Agregar a su calendario: {_link}\n"
                                 "Responda a este mensaje para cambiarla. STOP para no ser contactado.")
                 else:
@@ -941,20 +1020,22 @@ def api():
                 card = [("🧪 DEMO BOOKING (demo calendar)" if demo
                          else "🗓️ ULISES SITE BOOKING (no insta-call)"), name, phone,
                         f"Phone call: {label}", f"Wants: {interest_key} · Lang: {lang.upper()}"]
-                _sierra_line = await asyncio.to_thread(_sierra_push, lead_rec)
-                _bg(_confirm_soon(phone))
-                if _sierra_line:
-                    card.append(_sierra_line)
-                _sms_owner("\n".join(card))
+                bg.add_task(_finish_lead, lead_rec, card)
                 return JSONResponse({"ok": True, "scheduled": label})
             # slot vanished -> fall through to the instant call so no lead is lost
         if called_recently:
             call_status = "skipped: already called in the last 10 min"
             _bump_stat("leads")
         else:
-            call_status = _place_call(lead_rec)
+            call_status = await asyncio.to_thread(_place_call, lead_rec)
             _bump_stat("leads")
             _bump_stat("calls_placed")
+            if not str(call_status).startswith("initiated"):
+                # the dial never left, so no webhook will come: queue the redial ourselves
+                rt = state.get("retries", {}) or {}
+                rt[phone] = {"attempts": 1, "texted": False, "next_at": time.time() + 300}
+                state["retries"] = rt
+                _touch_lead(phone, status="no_answer", next_at=rt[phone]["next_at"])
 
         card = [(("🧪 DEMO — " if demo else "") +
                  f"{LEVEL_EMOJI[_lead_level(lead_rec)]} — ULISES SITE"), name, phone,
@@ -971,11 +1052,7 @@ def api():
             card.append(f"Ran value tool: {valuation_line}")
         card.append(f"Note: {lead_rec['message'][:120]}")
         card.append(f"Sofia call: {call_status[:80]}")
-        _sierra_line = await asyncio.to_thread(_sierra_push, lead_rec)
-        _bg(_confirm_soon(phone))
-        if _sierra_line:
-            card.append(_sierra_line)
-        _sms_owner("\n".join(card))
+        bg.add_task(_finish_lead, lead_rec, card)
         return JSONResponse({"ok": True, "call": call_status})
 
     # ── pitch-day drawing entries (QR on the last slide) ─────────────────────
@@ -1108,7 +1185,7 @@ def api():
             retries = state.get("retries", {})
             if retries.pop(frm, None) is not None:
                 state["retries"] = retries
-            _touch_lead(frm, awaiting_email=False)         # no email ask survives a STOP
+            _touch_lead(frm, awaiting_email=False, status="opted_out", next_at=None)
             waiting = state.get("awaiting_email", []) or []
             if frm in waiting:
                 state["awaiting_email"] = [p for p in waiting if p != frm]
@@ -1144,12 +1221,12 @@ def api():
                 waiting = [p for p in (state.get("awaiting_email", []) or []) if p != frm]
                 state["awaiting_email"] = waiting
                 lead = state.get(f"lead:{frm}", {}) or {}
-                line = await asyncio.to_thread(_sierra_push, lead)
-                _bg(_confirm_soon(frm))
                 if lead.get("lang") == "es":
                     _sms(frm, "¡Recibido, gracias! Ulises le dará seguimiento pronto. Responda STOP para no ser contactado.")
                 else:
                     _sms(frm, "Got it, thank you! Ulises will follow up shortly. Reply STOP to opt out.")
+                line = await asyncio.to_thread(_sierra_push, lead)
+                _bg(_confirm_soon(frm))
                 if not line:
                     line = "demo: would go to Sierra now" if lead.get("demo") else "Sierra: off"
                 _sms_owner(f"✅ EMAIL RECEIVED: {who} {frm} -> {email}\n{line}")
@@ -1181,8 +1258,7 @@ def api():
         # lead for their email. An unsigned Retell-shaped event still runs the
         # existing call bookkeeping, so a key mix-up can never stop redials.
         trusted = _retell_signed(raw, req.headers.get("x-retell-signature", ""))
-        had_ok = bool((state.get("retell_sig", {}) or {}).get("ok"))
-        _bump_sig(trusted)
+        had_ok = _bump_sig(trusted)          # had a signed event arrived BEFORE this one?
         if not trusted:
             print(f"retell-webhook: no valid signature, event={body.get('event')}")
             if had_ok:
@@ -1226,6 +1302,14 @@ def api():
                 if cur != "booked":
                     _touch_lead(phone, status="connected", next_at=None)
             elif call.get("direction") != "inbound" and phone:
+                if _blocked(phone) or (state.get(f"lead:{phone}", None) or {}).get("status") == "booked":
+                    # opted out while it rang, or booked meanwhile: no redial, no text
+                    cur = state.get("retries", {}) or {}
+                    if cur.pop(phone, None) is not None:
+                        state["retries"] = cur
+                    if _blocked(phone):
+                        _touch_lead(phone, status="opted_out", next_at=None)
+                    return {"ok": True}
                 plan = retries.get(phone, {"attempts": 1, "texted": False})
                 lead_rec = state.get(f"lead:{phone}", {"phone": phone, "lang": "en", "name": ""})
                 _log_call(phone, outcome="no_answer", seconds=dur, reason=reason,
@@ -1242,13 +1326,15 @@ def api():
                     else:
                         nxt = _next_morning_ts()
                     plan["next_at"] = nxt
-                    retries[phone] = plan
-                    state["retries"] = retries
+                    cur = state.get("retries", {}) or {}      # re-read: the text above took time
+                    cur[phone] = plan
+                    state["retries"] = cur
                     _touch_lead(phone, status="no_answer",
                                 attempts=plan["attempts"], next_at=nxt)
                 else:
-                    retries.pop(phone, None)
-                    state["retries"] = retries
+                    cur = state.get("retries", {}) or {}
+                    cur.pop(phone, None)
+                    state["retries"] = cur
                     _touch_lead(phone, status="gave_up", next_at=None,
                                 attempts=plan["attempts"])
                     _sms_owner(f"📵 ULISES{' DEMO' if lead_rec.get('demo') else ''}: no answer after {MAX_ATTEMPTS} tries — {lead_rec.get('name','?')} {phone}. Left SMS.")
@@ -1288,11 +1374,19 @@ def api():
                       fields={k: (custom.get(k) or "") for k in
                               ("areas", "budget", "preapproved", "timeline",
                                "callback_time", "must_haves") if custom.get(k)})
+            # Unanswered dials also produce call_analyzed: those get no note, no
+            # email ask, and never replace what a real conversation taught us.
+            _connected = dur >= 12 and \
+                (call.get("disconnection_reason") or "").lower() not in NO_ANSWER_REASONS
             # What the call taught us about someone we didn't have on file.
             _known = state.get(f"lead:{phone}", {}) or {}
             if trusted:          # only Retell-signed details may flow on to the CRM
-                _upd_q = {"open_questions": open_q[:300]} if open_q else {}
-                _upd = {"last_summary": "\n".join(lines[1:])[:900], **_upd_q}
+                _upd = {}
+                if _connected:
+                    _upd["last_summary"] = "\n".join(
+                        x for x in lines[1:] if not x.startswith("Rec: "))[:900]
+                    if open_q:
+                        _upd["open_questions"] = open_q[:300]
                 _cn = (custom.get("caller_name") or "").strip()
                 if _cn and _cn.lower() not in ("unknown", "n/a", "none") and not _known.get("name"):
                     _upd["name"] = _cn[:80]
@@ -1311,9 +1405,6 @@ def api():
             # AND that Sierra confirmed is on Ulises (never a search, never a
             # misrouted one), and only while the record is fresh — a phone
             # number can change hands.
-            # Unanswered dials also produce call_analyzed: those get no note and no ask.
-            _connected = dur >= 12 and \
-                (call.get("disconnection_reason") or "").lower() not in NO_ANSWER_REASONS
             if trusted and _connected and _known.get("sierra_status") in ("routing", "unassigned"):
                 await asyncio.to_thread(_sierra_confirm, phone, True)
                 _known = state.get(f"lead:{phone}", {}) or _known
@@ -1321,10 +1412,18 @@ def api():
                     and _known.get("sierra_status") == "sent" and not _known.get("demo") \
                     and time.time() - float(_known.get("sierra_created_ts") or _known.get("ts") or 0) \
                     < LEAD_FRESH_DAYS * 86400:
+                lid = _known["sierra_lead_id"]
                 try:
                     import sierra_client
-                    if sierra_client.add_call_note(_known["sierra_lead_id"], "\n".join(lines)):
-                        lines.append(f"-> note added to Sierra #{_known['sierra_lead_id']}")
+                    # ClearView can reassign a lead after we confirmed it: check again
+                    # right before writing. Unreachable = no note (fail closed).
+                    got = await asyncio.to_thread(sierra_client.assigned_agent, lid)
+                    if got and got[0] == sierra_client._agent_id():
+                        if await asyncio.to_thread(sierra_client.add_call_note, lid, "\n".join(lines)):
+                            lines.append(f"-> note added to Sierra #{lid}")
+                    elif got and (got[0] or 0) > 0:
+                        _touch_lead(phone, sierra_status="reassigned")
+                        lines.append(f"-> Sierra #{lid} is now on {got[1] or got[0]}: no note added")
                 except Exception:
                     pass
             # No email on file (they phoned in) -> one text asking for it.
@@ -1340,8 +1439,7 @@ def api():
 
     # ── inbound: lead calls the 505 back ─────────────────────────────────────
     @web.api_route("/telnyx-inbound", methods=["GET", "POST"])
-    async def telnyx_inbound(req: Request):
-        import asyncio
+    async def telnyx_inbound(req: Request, bg: BackgroundTasks):
         from retell import Retell
         try:
             form = await req.form()
@@ -1363,6 +1461,11 @@ def api():
         # may create a record; a GET with query params never does.
         real_call = req.method == "POST" and \
             to_number[-10:] in {n[-10:] for n in _our_numbers()}
+        if real_call:
+            # they called us: a pending redial must not ring them mid-call
+            _r = state.get("retries", {}) or {}
+            if _r.pop(from_number, None) is not None:
+                state["retries"] = _r
         if known is None and real_call and from_number.startswith("+") and not _blocked(from_number):
             known = {
                 "phone": from_number, "name": "", "lang": "en",
@@ -1411,11 +1514,11 @@ def api():
                     "lead_level": _lead_level(known or {}),
                     "during_hours": "yes" if _during_hours() else "no",
                     "last_call": _last_call_line(known or {}),
-                    "booked_for": (known or {}).get("booked_for") or "none",
+                    "booked_for": _booked_line(known),
                 },
                 agent_override={"retell_llm": {"begin_message": begin}},
             )
-            _bump_stat("inbound")
+            bg.add_task(_bump_stat, "inbound")     # not while the caller hears ringback
             twiml = ('<?xml version="1.0" encoding="UTF-8"?>'
                      f'<Response><Dial><Sip>sip:{call.call_id}@sip.retellai.com</Sip></Dial></Response>')
         except Exception as e:
@@ -1497,10 +1600,13 @@ def api():
         args = body.get("args", body) or {}
         hot_only = str(args.get("hot_only", "")).lower() in ("true", "yes", "1")
 
-        # Prefer the live Flexmls cache once the sync is running.
-        cache = state.get("listings_cache", None)
-        if cache and cache.get("featured"):
-            rows = cache.get("hot", []) if hot_only else cache.get("featured", [])
+        call = body.get("call", {}) or {}
+        phone = (call.get("metadata") or {}).get("phone") or call.get("from_number") or ""
+        # Real MLS rows only: his own listings, else the hot sheet. The fictional
+        # samples are for demo calls ONLY - a real buyer must never hear a made-up home.
+        cache = state.get("listings_cache", None) or {}
+        rows = (cache.get("hot") or []) if hot_only else (cache.get("featured") or cache.get("hot") or [])
+        if rows:
             q_addr = str(args.get("address") or "").lower()
             q_area = str(args.get("area") or "").lower()
             res = []
@@ -1527,25 +1633,30 @@ def api():
                     "hot": l.get("hot_tag", "") if hot_only else "",
                 })
             res = res[:3]
-        else:
+        elif _is_demo(phone):
             res = search(
                 area=args.get("area"), max_price=args.get("max_price"),
                 min_beds=args.get("min_beds"), address=args.get("address"),
                 hot_only=hot_only,
             )[:3]
+        else:
+            res = []
         if not res:
             return {"result": "No exact matches in Ulises's current featured listings. Tell the caller Ulises has full MLS access and will pull matching homes for them personally."}
+        def _n(v):                                   # 3.0 -> "3"; "?" stays "?"
+            return f"{v:g}" if isinstance(v, (int, float)) else str(v)
         out = []
         for l in res:
-            line = (f"{l['address']} ({l['area']}): ${l['price']:,}, {l['beds']} bed / "
-                    f"{l['baths']} bath, {l['sqft']:,} sqft, status {l['status']}. {l['highlights']}")
+            line = (f"{l['address']} ({l['area']}): ${l['price']:,}, {_n(l['beds'])} bed / "
+                    f"{_n(l['baths'])} bath" + (f", {l['sqft']:,} sqft" if l.get("sqft") else "")
+                    + f", status {l['status']}. {l['highlights']}")
             if l.get("hot"):
                 line += f" HOT: {l['hot']}."
             out.append(line)
         return {"result": " | ".join(out)}
 
     @web.post("/tools/book-showing")
-    async def book_showing(req: Request):
+    async def book_showing(req: Request, bg: BackgroundTasks):
         try:
             body = await req.json()
         except Exception:
@@ -1567,6 +1678,13 @@ def api():
             start = datetime.fromisoformat(start_iso)
             if start.tzinfo is None:
                 start = start.replace(tzinfo=tz)
+            start = start.astimezone(tz)        # an offset from the model -> El Paso time
+            now = datetime.now(tz)
+            if start < now + timedelta(minutes=MIN_NOTICE_MIN):
+                alts = _open_slots(max(start, now), limit=2, demo=_is_demo(phone))
+                alt = " or ".join(a.strftime("%A %I:%M %p").replace(" 0", " ") for a in alts)
+                return {"result": f"That time has passed or is too soon. Today is {now:%A %B %d, %Y}. "
+                                  + (f"Offer {alt} instead." if alt else "Ask for a later day.")}
             end = start + timedelta(minutes=s["slot_min"])
 
             # inside business hours?
@@ -1589,7 +1707,7 @@ def api():
             demo = _is_demo(phone)
             svc = _cal_svc()
             pad_end = end + timedelta(minutes=s["buffer_min"])
-            if any(b0 < pad_end and b1 > start
+            if any(b0 < pad_end and b1 > start - timedelta(minutes=s["buffer_min"])
                    for b0, b1 in _busy_windows(svc, start - timedelta(minutes=s["buffer_min"]),
                                                pad_end, demo)):
                 alts = _open_slots(start, limit=2, demo=demo)
@@ -1597,28 +1715,41 @@ def api():
                 return {"result": f"Ulises already has something at that time. "
                                   f"{'Offer ' + alt + ' instead.' if alt else 'Ask for another day.'}"}
 
-            lead = state.get(f"lead:{phone}", {})
+            lead = state.get(f"lead:{phone}", {}) or {}
+            # no tool can move an event: a second booking says what it replaces
+            prev = _booked_line(lead)
+            resched = f"RESCHEDULED - replaces {prev}. Delete that event." if prev != "none" else ""
             body = _rich_event(name, phone, purpose, prop, lead,
                                "DEMO — booked by Sofia" if demo else "booked by Sofia on a call")
+            if resched:
+                body["description"] = resched + "\n" + body["description"]
             body["start"] = {"dateTime": start.isoformat(), "timeZone": TZ}
             body["end"] = {"dateTime": end.isoformat(), "timeZone": TZ}
             svc.events().insert(calendarId=_cal_id(demo), body=body).execute()
-            _bump_stat("booked")
-            _touch_lead(phone, status="booked", next_at=None,
-                        booked_for=start.strftime("%a %b %d %I:%M %p"))
-            bookings = state.get("bookings", [])
-            bookings.append({"ts": time.time(), "start": start.isoformat(), "name": name,
-                             "phone": phone,
-                             "purpose": ("DEMO " + purpose) if demo else purpose,
-                             "property": prop})
-            state["bookings"] = bookings[-200:]
-            kind = {"consult": "PHONE CONSULT", "valuation": "HOME VALUATION",
-                    "showing": "SHOWING (IN PERSON)"}.get(purpose, purpose.upper())
-            _sms_owner(f"📅 {'DEMO — ' if demo else ''}TENTATIVE {kind}\n"
-                       f"{name} {phone}\n"
-                       f"{start.strftime('%a %b %d %I:%M %p')} MT\n"
-                       + (f"{prop}\n" if prop else "")
-                       + "Not confirmed yet — call them to lock it in.")
+            label = start.strftime("%a %b %d %I:%M %p")
+
+            def _after():
+                # Sofia already has her answer. The owner text goes first, so a
+                # bookkeeping error can never eat it.
+                kind = {"consult": "PHONE CONSULT", "valuation": "HOME VALUATION",
+                        "showing": "SHOWING (IN PERSON)"}.get(purpose, purpose.upper())
+                _sms_owner(f"📅 {'DEMO — ' if demo else ''}TENTATIVE {kind}\n"
+                           f"{name} {phone}\n"
+                           f"{label} MT\n"
+                           + (f"{prop}\n" if prop else "")
+                           + (f"{resched}\n" if resched else "")
+                           + "Not confirmed yet — call them to lock it in.")
+                _touch_lead(phone, status="booked", next_at=None, booked_for=label,
+                            booked_iso=start.isoformat())
+                _bump_stat("booked")
+                bookings = state.get("bookings", [])
+                bookings.append({"ts": time.time(), "start": start.isoformat(), "name": name,
+                                 "phone": phone,
+                                 "purpose": ("DEMO " + purpose) if demo else purpose,
+                                 "property": prop})
+                state["bookings"] = bookings[-200:]
+
+            bg.add_task(_after)
             return {"result": f"Booked tentatively for {start.strftime('%A %B %d at %I:%M %p')}. Tell the caller Ulises will confirm shortly."}
         except Exception as e:
             return {"result": f"Could not book ({str(e)[:80]}). Take their preferred time and tell them Ulises will confirm it personally."}
@@ -1641,6 +1772,10 @@ def api():
             tz = ZoneInfo(TZ)
             base = datetime.fromisoformat(date_str).replace(tzinfo=tz) if date_str \
                 else datetime.now(tz)
+            today = datetime.now(tz)
+            if date_str and base.date() < today.date():
+                return {"result": f"That date has passed. Today is {today:%A %B %d, %Y}. "
+                                  "Ask which upcoming day works."}
             for d in range(0, 7):
                 day = (base + timedelta(days=d)).replace(hour=12, minute=0, second=0, microsecond=0)
                 slots = _open_slots(day, limit=3, demo=dm)
@@ -1843,6 +1978,8 @@ def retry_worker():
             if plan.get("attempts", 1) >= MAX_ATTEMPTS:
                 save(phone, None)
                 _touch_lead(phone, status="gave_up", next_at=None)
+                _sms_owner(f"\U0001F4F5 ULISES{' DEMO' if _is_demo(phone) else ''}: no result from "
+                           f"{phone} after {MAX_ATTEMPTS} tries. Follow up by hand.")
                 continue
             step = RETRY_STEPS_MIN[min(plan.get("attempts", 1) - 1, len(RETRY_STEPS_MIN) - 1)]
             plan["next_at"] = now + step * 60
@@ -1850,10 +1987,16 @@ def retry_worker():
             continue
         if now < plan.get("next_at", 0):
             continue
-        if _blocked(phone) or not state.get(f"lead:{phone}", None):
-            save(phone, None)
+        # the loop runs on a snapshot: a callback, a STOP or a booking may have
+        # changed this plan since. Act only on what is due right now.
+        live = (state.get("retries", {}) or {}).get(phone)
+        if not live or now < float(live.get("next_at") or 0):
             continue
-        lead_rec = state.get(f"lead:{phone}")
+        plan = live
+        lead_rec = state.get(f"lead:{phone}", None)
+        if _blocked(phone) or not lead_rec or lead_rec.get("status") == "booked":
+            save(phone, None)          # opted out, gone, or already booked: never dial
+            continue
         plan["attempts"] = int(plan.get("attempts", 1)) + 1
         plan["next_at"] = float("inf")  # webhook re-schedules on another no-answer
         plan["dialed_ts"] = now

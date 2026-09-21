@@ -115,7 +115,7 @@
       <div>
         <b style="font-size:.85rem">T-Mobile / AT&amp;T</b>
         <span class="code">##61#</span>
-        <a class="dial off" href="tel:##61%23">Tap to turn off</a>
+        <a class="dial off" href="tel:%23%2361%23">Tap to turn off</a>
       </div>
       <div>
         <b style="font-size:.85rem">Verizon</b>
@@ -151,7 +151,7 @@ document.getElementById("ipNum").textContent = pretty;
 
 // **61* = forward ONLY when unanswered · *11 = voice · *20# = ring 20s first
 const gsmCode = "**61*" + bare + "*11*20#";
-const vzCode  = "*71" + bare;
+const vzCode  = "*71" + SOFIA.slice(2);      // Verizon: *71 + the 10-digit number
 document.getElementById("gsmOn").textContent = gsmCode;
 document.getElementById("vzOn").textContent  = vzCode;
 document.getElementById("gsmOnLink").href = "tel:" + encodeURIComponent(gsmCode);

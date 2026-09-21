@@ -37,8 +37,8 @@ window.HOT_LISTINGS = [
     area: "West Side · Cimarron",
     beds: 4, baths: 2.5, sqft: 2400,
     hot: { en: "Open House Sat", es: "Casa Abierta Sáb" },
-    note: { en: "Listed 3 days ago · already 2 showings booked",
-            es: "Publicada hace 3 días · ya con 2 citas" },
+    note: { en: "New this week",
+            es: "Nueva esta semana" },
     img: "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&q=70&auto=format&fit=crop"
   },
   {

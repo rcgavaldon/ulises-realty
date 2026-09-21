@@ -147,8 +147,10 @@ CONDITION_ADJ = {"needs work": 0.86, "fair": 0.93, "average": 1.0,
                  "good": 1.06, "updated": 1.12, "excellent": 1.15}
 
 
-def _digits(s):
-    return "".join(c for c in (s or "") if c.isdigit())
+# every alias and area name, longest first, so "far east" beats "east"; on a tie
+# the alias wins (aliases come first and sorted() is stable)
+_AREA_NAMES = sorted([*AREA_ALIASES.items(), *((k, k) for k in AREAS)],
+                     key=lambda t: len(t[0]), reverse=True)
 
 
 def classify(address: str = "", area_hint: str = ""):
@@ -161,14 +163,10 @@ def classify(address: str = "", area_hint: str = ""):
             key = ZIP_AREA[z]
             return key, AREAS[key], f"ZIP {z}"
 
-    for alias, key in AREA_ALIASES.items():
-        if alias in blob:
-            return key, AREAS[key], f"'{alias}'"
-
-    # longest area name first so "west side" wins over "west"
-    for key in sorted(AREAS, key=len, reverse=True):
-        if key in blob:
-            return key, AREAS[key], f"'{key}'"
+    # whole words only: "ne" must never match inside "pine"
+    for name, key in _AREA_NAMES:
+        if re.search(rf"\b{re.escape(name)}\b", blob):
+            return key, AREAS[key], f"'{name}'"
 
     return "el paso", DEFAULT_AREA, "El Paso countywide average"
 
