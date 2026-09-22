@@ -142,6 +142,7 @@
            box-shadow:0 4px 12px rgba(192,57,43,.35)}
   .hbody{padding:16px 18px 18px;display:flex;flex-direction:column;gap:4px;flex:1}
   .hnote{font-size:.79rem;color:#a35c00;font-weight:600;margin-top:6px}
+  .lcourtesy{font-size:.7rem;color:#777;margin-top:6px}
   .hspecs{display:flex;gap:14px;margin-top:auto;padding-top:12px;border-top:1px solid var(--line);font-size:.82rem;color:var(--muted)}
   .hspecs b{color:var(--ink)}
 
@@ -859,6 +860,9 @@ function toggleLang(){
   if(ct) onCallTime(ct);
 }
 
+// MLS text into the page: plain text only
+const escT = s => String(s || "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
 // ── Listings render (sample module — replaced by IDX widget later) ──────────
 function renderListings(){
   const root = document.getElementById("listings-module");
@@ -878,8 +882,9 @@ function renderListings(){
         <div class="lspecs">
           <span><b>${l.beds}</b> ${t("bd","rec")}</span>
           <span><b>${l.baths}</b> ${t("ba","baños")}</span>
-          <span><b>${l.sqft.toLocaleString()}</b> sqft</span>
+          ${l.sqft?`<span><b>${l.sqft.toLocaleString()}</b> sqft</span>`:""}
         </div>
+        ${l.office?`<div class="lcourtesy">${t("Listing courtesy of","Cortesía de")} ${escT(l.office)}</div>`:""}
       </div>
     ${l.url?`</a>`:`</div>`}`).join("");
 }
@@ -893,24 +898,31 @@ function renderListings(){
     const r = await fetch(API_BASE + "/listings-feed");
     const d = await r.json();
     if(!d.live) return;
-    if(Array.isArray(d.hot) && d.hot.length){
-      window.HOT_LISTINGS = d.hot.map(l => ({
+    const hasHot = Array.isArray(d.hot) && d.hot.length;
+    const hasFeat = Array.isArray(d.featured) && d.featured.length;
+    if(hasHot){
+      window.HOT_LISTINGS = d.hot.slice(0, 12).map(l => ({
         price: l.price, address: l.address, area: l.area,
         beds: l.beds, baths: l.baths, sqft: l.sqft || 0,
         hot: { en: l.hot_tag || "Hot", es: l.hot_tag_es || l.hot_tag || "Hot" },
         note: { en: l.note || "", es: l.note_es || l.note || "" },
-        img: l.img || "", url: l.url || ""
+        img: l.img || "", url: l.url || "", office: l.office || ""
       }));
+      document.querySelector('[data-i18n="h_note"]').style.display = "none";
     }
-    if(Array.isArray(d.featured) && d.featured.length){
+    if(hasFeat){
       window.SAMPLE_LISTINGS = d.featured.map(l => ({
         price: l.price, address: l.address, area: l.area,
         beds: l.beds, baths: l.baths, sqft: l.sqft || 0,
         tag: { en: l.status || "Active", es: l.status || "Activa" },
-        img: l.img || "", url: l.url || ""
+        img: l.img || "", url: l.url || "", office: l.office || ""
       }));
+      document.querySelector('[data-i18n="l_note"]').style.display = "none";
+    } else if(hasHot){
+      // no listings of his own yet: never let the sample homes pose as real ones
+      document.getElementById("listings").style.display = "none";
+      document.querySelectorAll('a[href="#listings"]').forEach(a => a.setAttribute("href", "#hot"));
     }
-    document.querySelectorAll(".idx-note").forEach(el => el.style.display = "none");
     renderListings(); renderHot();
   }catch(e){ /* keep samples */ }
 })();
@@ -954,8 +966,9 @@ function renderHot(){
         <div class="hspecs">
           <span><b>${l.beds}</b> ${t("bd","rec")}</span>
           <span><b>${l.baths}</b> ${t("ba","baños")}</span>
-          <span><b>${l.sqft.toLocaleString()}</b> sqft</span>
+          ${l.sqft?`<span><b>${l.sqft.toLocaleString()}</b> sqft</span>`:""}
         </div>
+        ${l.office?`<div class="lcourtesy">${t("Listing courtesy of","Cortesía de")} ${escT(l.office)}</div>`:""}
       </div>
     ${l.url?`</a>`:`</div>`}`).join("");
 }

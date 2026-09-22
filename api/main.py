@@ -33,7 +33,8 @@ image = (
         "fastapi[standard]==0.115.*", "httpx", "retell-sdk",
         "google-api-python-client", "google-auth", "tzdata",
     )
-    .add_local_python_source("listings_data", "property_data", "spark_client", "sierra_client")
+    .add_local_python_source("listings_data", "property_data", "spark_client", "sierra_client",
+                             "flex_share")
 )
 app = modal.App("ulises-realty-api")
 state = modal.Dict.from_name("ulises-realty-state", create_if_missing=True)
@@ -542,7 +543,7 @@ def api():
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api", "rev": "v18-contact-details"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "v19-hotsheet"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.
@@ -566,7 +567,7 @@ def api():
         try:
             # each job on its own: one failing never skips the others
             for job in (retry_worker, email_followup_worker, _sierra_stuck_scan,
-                        _sierra_retry_tick, _sierra_confirm_tick):
+                        _sierra_retry_tick, _sierra_confirm_tick, _listings_tick):
                 try:
                     job()
                 except Exception as e:
@@ -604,7 +605,7 @@ def api():
     @web.get("/listings-feed")
     def listings_feed():
         cache = state.get("listings_cache", None)
-        if not cache or not cache.get("featured"):
+        if not cache or not (cache.get("featured") or cache.get("hot")):
             return {"live": False}
         return {
             "live": True,
@@ -1632,6 +1633,7 @@ def api():
     @web.post("/tools/lookup-listings")
     async def lookup_listings(req: Request):
         from listings_data import search
+        from property_data import classify
         try:
             body = await req.json()
         except Exception:
@@ -1653,8 +1655,10 @@ def api():
                 if q_addr and not any(t in str(l.get("address", "")).lower()
                                       for t in q_addr.split() if len(t) > 2):
                     continue
+                # match the subdivision, the city, or the part of town its ZIP is in
                 if q_area and q_area not in str(l.get("area", "")).lower() \
-                        and q_area not in str(l.get("city", "")).lower():
+                        and q_area not in str(l.get("city", "")).lower() \
+                        and q_area not in classify(str(l.get("postal", "")))[0]:
                     continue
                 try:
                     if args.get("max_price") and l.get("price", 0) > float(args["max_price"]) * 1.10:
@@ -1668,7 +1672,9 @@ def api():
                     "price": int(l.get("price") or 0), "beds": l.get("beds") or "?",
                     "baths": l.get("baths") or "?", "sqft": int(l.get("sqft") or 0),
                     "status": l.get("status", "Active"),
-                    "highlights": l.get("public_remarks") or "",
+                    # never imply the home is Ulises's own listing
+                    "highlights": " ".join(x for x in (l.get("public_remarks") or "",
+                                                       f"Listed by {l['office']}." if l.get("office") else "") if x),
                     "hot": l.get("hot_tag", "") if hot_only else "",
                 })
             res = res[:3]
@@ -1957,20 +1963,30 @@ SPARK_STALE_AFTER = 26 * 3600   # backup re-pulls past this age
 SPARK_ALERT_AFTER = 50 * 3600   # owner gets an SMS past this age (2 misses)
 
 
-def spark_sync(force: bool):
+HOTSHEET_REFRESH = 6 * 3600     # the 5-min tick re-pulls the shared hot sheet past this age
+
+
+def spark_sync(force: bool, stale_after: int = SPARK_STALE_AFTER):
+    """Listing pull. Hot sheet = Ulises's public Flexmls shared link (no key
+    needed, always current). Featured = his own listings, once Spark can see
+    them. Either failing keeps the last good pull on the site."""
+    import flex_share
     import spark_client
-    if not spark_client.configured():
-        return {"ok": True, "live": False, "note": "SPARK_TOKEN not set — dormant"}
 
     cache = state.get("listings_cache", {}) or {}
     age = time.time() - cache.get("ts", 0)
-    if not force and age < SPARK_STALE_AFTER:
+    if not force and age < stale_after:
         return {"ok": True, "skipped": "fresh", "age_h": round(age / 3600, 1)}
 
     try:
-        featured = spark_client.my_listings()
-        hot_raw = spark_client.hot_sheet()
-        hot = []
+        featured = []
+        if spark_client.configured():
+            try:
+                featured = spark_client.my_listings()
+            except Exception:
+                featured = []
+        hot = flex_share.fetch()
+        hot_raw = [] if hot or not spark_client.configured() else spark_client.hot_sheet()
         for l in hot_raw[:6]:
             tag, tag_es = "Just Listed", "Recién Publicada"
             if l.get("price_change"):
@@ -1979,8 +1995,8 @@ def spark_sync(force: bool):
                         "note": l.get("public_remarks", "")[:90],
                         "note_es": ""})
         if not featured and not hot:
-            raise RuntimeError("Spark returned no listings")
-        state["listings_cache"] = {"ts": time.time(), "featured": featured[:12], "hot": hot}
+            raise RuntimeError("no listings from the shared hot sheet or Spark")
+        state["listings_cache"] = {"ts": time.time(), "featured": featured[:12], "hot": hot[:40]}
         state["spark_fail_note"] = ""
         return {"ok": True, "featured": len(featured), "hot": len(hot)}
     except Exception as e:
@@ -1988,9 +2004,16 @@ def spark_sync(force: bool):
         state["spark_fail_note"] = err
         # alert only when the feed is genuinely stale (both timers missed)
         if age > SPARK_ALERT_AFTER and cache:
-            _sms_owner(f"⚠️ ULISES SITE: Flexmls feed hasn't synced in {int(age/3600)}h. "
-                       f"Site is serving the last good pull. Err: {err[:100]}")
+            _alert_once("listings_stale",
+                        f"⚠️ ULISES SITE: listing feed hasn't synced in {int(age/3600)}h. "
+                        f"Site is serving the last good pull. Err: {err[:100]}",
+                        every=24 * 3600, robert=True)
         return {"ok": False, "error": err, "age_h": round(age / 3600, 1)}
+
+
+def _listings_tick():
+    """5-min tick: keep the hot sheet fresh (re-pull past HOTSHEET_REFRESH)."""
+    spark_sync(False, stale_after=HOTSHEET_REFRESH)
 
 
 # ── redial cadence worker (fired by GitHub Actions cron — Modal's 5-schedule
