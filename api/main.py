@@ -145,12 +145,34 @@ def _retell_signed(raw: bytes, sig: str) -> bool:
     return hmac.compare_digest(want, digest)
 
 
-def _alert_once(key: str, text: str, every: int = 6 * 3600):
-    """Owner alert that can't spam: at most once per `every` seconds per key."""
+def _alert_once(key: str, text: str, every: int = 6 * 3600, robert: bool = False):
+    """Owner alert that can't spam: at most once per `every` seconds per key.
+    robert=True: a technical alert for Robert (OWNER_CELL), never the client."""
     last = state.get(f"alert:{key}", 0) or 0
     if time.time() - last > every:
         state[f"alert:{key}"] = time.time()
-        _sms_owner(text)
+        if robert:
+            _sms(os.environ["OWNER_CELL"], text)
+        else:
+            _sms_owner(text)
+
+
+def _retell_confirm(body: dict):
+    """An event that failed the signature check: ask Retell itself whether this
+    call is real and one of OUR agents'. If so, return Retell's own copy of the
+    call (never the posted one, which could be forged). Else None."""
+    cid = str((body.get("call") or {}).get("call_id") or "")
+    if not cid or body.get("event") not in ("call_ended", "call_analyzed"):
+        return None
+    try:
+        from retell import Retell
+        c = Retell(api_key=os.environ["RETELL_API_KEY"]).call.retrieve(cid, timeout=8)
+        d = c.model_dump() if hasattr(c, "model_dump") else dict(c)
+    except Exception:
+        return None
+    if d.get("agent_id") not in {os.environ.get("AGENT_EN"), os.environ.get("AGENT_ES")}:
+        return None
+    return d
 
 
 def _bump_sig(ok: bool):
@@ -209,6 +231,7 @@ def _place_call(lead: dict) -> str:
                 "during_hours": "yes" if _during_hours() else "no",
                 "last_call": _last_call_line(lead),
                 "booked_for": _booked_line(lead),
+                "email_on_file": "yes" if lead.get("email") else "no",
             },
             metadata={"source": "ulises-realty", "phone": lead["phone"]},
         )
@@ -519,7 +542,7 @@ def api():
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api", "rev": "v17-all-calls-real"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "v18-contact-details"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.
@@ -1260,14 +1283,25 @@ def api():
         trusted = _retell_signed(raw, req.headers.get("x-retell-signature", ""))
         had_ok = _bump_sig(trusted)          # had a signed event arrived BEFORE this one?
         if not trusted:
+            # The signature can fail on a key mix-up. Retell itself is the other
+            # proof: a call it confirms as ours is trusted, using ITS copy.
+            confirmed = await asyncio.to_thread(_retell_confirm, body)
+            if confirmed:
+                body = {**body, "call": confirmed}
+                trusted = True
+                _cf = state.get("retell_sig", {}) or {}
+                _cf["confirmed"] = int(_cf.get("confirmed", 0)) + 1
+                state["retell_sig"] = _cf
+        if not trusted:
             print(f"retell-webhook: no valid signature, event={body.get('event')}")
             if had_ok:
                 # Retell has already proven it signs with our key, so anything
                 # unsigned from here on is not Retell. Drop it.
                 return {"ok": True}
             _alert_once("retell_bad_sig",
-                        "⚠️ ULISES: a call event arrived without a valid Retell signature. "
-                        "Calls still work; Sierra notes and email texts are paused for it. Tell Robert.")
+                        "⚠️ ULISES: a call event failed the Retell check and Retell couldn't "
+                        "confirm it. Calls still work; Sierra notes and email texts are paused for it.",
+                        robert=True)
         event = body.get("event")
         # Retell retries a slow webhook: act on each (call, event) once.
         _cid = str((body.get("call") or {}).get("call_id") or "")
@@ -1361,6 +1395,9 @@ def api():
             summary = (analysis.get("call_summary") or "").strip()
             if summary:
                 lines.append(f"Summary: {summary[:350]}")
+            _bp = (custom.get("best_phone") or "").strip()
+            if _bp and _bp.lower() not in ("same", "none", "unknown", "n/a"):
+                lines.append(f"Best number: {_bp}")
             open_q = (custom.get("open_questions") or "").strip()
             if open_q.lower() in ("none", "n/a", "unknown"):
                 open_q = ""
@@ -1516,6 +1553,7 @@ def api():
                     "during_hours": "yes" if _during_hours() else "no",
                     "last_call": _last_call_line(known or {}),
                     "booked_for": _booked_line(known),
+                    "email_on_file": "yes" if (known or {}).get("email") else "no",
                 },
                 agent_override={"retell_llm": {"begin_message": begin}},
             )
