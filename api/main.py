@@ -519,7 +519,7 @@ def api():
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api", "rev": "v16-review-fixes"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "v17-all-calls-real"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.
@@ -1472,8 +1472,9 @@ def api():
                 "interest": "other", "interest_desc": INTEREST["other"]["en"],
                 "message": "none", "email": "", "address": "", "valuation_line": "",
                 "prequalified": "", "own_rent": "", "move_date": "",
-                # The owner's own phones calling in are tests: never Sierra.
-                "demo": from_number in set(_owner_cells()) | {os.environ.get("OWNER_CELL", "")},
+                # Every call on his line is real, the owner's phones included (Robert, 9/22).
+                # Demo mode is only the site's ?demo=1 link now.
+                "demo": False,
                 "source": "inbound_call", "ts": time.time(),
                 "status": "connected", "attempts": 0, "next_at": None, "calls": [],
             }
