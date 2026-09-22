@@ -8,7 +8,7 @@ Run after any prompt change:  python api/update_llms.py
 import os, re, json, urllib.request
 
 MODAL_URL = "https://roberto-gavaldon3--ulises-realty-api-api.modal.run"
-OWNER = "+19152269501"
+OWNER = "+19153058888"   # Ulises's cell: live transfers ring him
 
 def _key():
     with open(r"C:\Users\rober\Sofia Ai Voice\.env", encoding="utf-8") as f:
