@@ -143,6 +143,12 @@
   .hbody{padding:16px 18px 18px;display:flex;flex-direction:column;gap:4px;flex:1}
   .hnote{font-size:.79rem;color:#a35c00;font-weight:600;margin-top:6px}
   .lcourtesy{font-size:.7rem;color:#777;margin-top:6px}
+  #hot-filters{margin:0 0 22px}
+  .hf-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  .hf-row select{padding:9px 12px;border:1px solid #d6d0c4;border-radius:10px;background:#fff;font:inherit;font-size:.88rem;min-width:0;flex:1 1 150px;max-width:230px}
+  .hf-meta{font-size:.8rem;color:#777;margin-top:8px}
+  .hf-empty{grid-column:1/-1;padding:28px;text-align:center;color:#666;background:#faf7f1;border-radius:14px}
+  .hf-more{display:block;margin:22px auto 0}
   .hspecs{display:flex;gap:14px;margin-top:auto;padding-top:12px;border-top:1px solid var(--line);font-size:.82rem;color:var(--muted)}
   .hspecs b{color:var(--ink)}
 
@@ -372,6 +378,7 @@
       </div>
       <a href="#contact" class="btn btn-gold" style="align-self:center" data-i18n="h_cta">Ask About These</a>
     </div>
+    <div id="hot-filters"></div>
     <div id="hot-module" class="hgrid"><!-- Flexmls hot sheet feed replaces this module when live --></div>
     <p class="idx-note" data-i18n="h_note">Preview list — my live MLS hot sheet is connecting. Text or call and I'll tell you what's actually moving this week.</p>
   </div>
@@ -901,12 +908,14 @@ function renderListings(){
     const hasHot = Array.isArray(d.hot) && d.hot.length;
     const hasFeat = Array.isArray(d.featured) && d.featured.length;
     if(hasHot){
-      window.HOT_LISTINGS = d.hot.slice(0, 12).map(l => ({
+      window.HOT_LIVE = true;
+      window.HOT_SYNCED = d.synced_at || 0;
+      window.HOT_LISTINGS = d.hot.map(l => ({
         price: l.price, address: l.address, area: l.area,
         beds: l.beds, baths: l.baths, sqft: l.sqft || 0,
         hot: { en: l.hot_tag || "Hot", es: l.hot_tag_es || l.hot_tag || "Hot" },
         note: { en: l.note || "", es: l.note_es || l.note || "" },
-        img: l.img || "", url: l.url || "", office: l.office || ""
+        img: l.img || "", url: l.url || "", office: l.office || "", region: l.region || ""
       }));
       document.querySelector('[data-i18n="h_note"]').style.display = "none";
     }
@@ -947,12 +956,61 @@ function renderMedia(){
 }
 
 // ── Hot homes render (swap point for the Flexmls hot sheet feed) ────────────
+// ── Hot sheet filters (live feed only; the sample strip has none) ───────────
+const HOT_REGIONS = [["west","West Side","Oeste"],["central","Central","Centro"],
+  ["northeast","Northeast","Noreste"],["east","East Side","Este"],["far east","Far East","Este Lejano"],
+  ["horizon","Horizon City","Horizon City"],["lower valley","Lower Valley & Socorro","Valle Bajo y Socorro"]];
+const HOT_PRICES = [["0-250000","Under $250k","Menos de $250k"],["250000-350000","$250k – $350k","$250k – $350k"],
+  ["350000-500000","$350k – $500k","$350k – $500k"],["500000-","$500k+","$500k+"]];
+const HOT_F = {area:"", price:"", beds:""};
+let HOT_ALL = false;
+function setHotF(k, v){ HOT_F[k] = v; HOT_ALL = false; renderHot(); }
+function hotMatches(){
+  return (window.HOT_LISTINGS || []).filter(l => {
+    if(HOT_F.area && l.region !== HOT_F.area) return false;
+    if(HOT_F.price){ const [lo, hi] = HOT_F.price.split("-"); if(l.price < +lo || (hi && l.price >= +hi)) return false; }
+    if(HOT_F.beds && (l.beds || 0) < +HOT_F.beds) return false;
+    return true;
+  });
+}
+function renderHotFilters(shown, total){
+  const box = document.getElementById("hot-filters");
+  if(!box) return;
+  if(!window.HOT_LIVE){ box.innerHTML = ""; return; }
+  const t = (en,es) => LANG==="es" ? es : en;
+  const all = window.HOT_LISTINGS || [];
+  const opt = (v, label, cur) => `<option value="${v}"${v===cur?" selected":""}>${label}</option>`;
+  const areas = HOT_REGIONS.filter(r => all.some(l => l.region === r[0]))
+    .map(r => opt(r[0], `${t(r[1], r[2])} (${all.filter(l => l.region === r[0]).length})`, HOT_F.area)).join("");
+  const when = window.HOT_SYNCED ? new Date(window.HOT_SYNCED * 1000).toLocaleString(LANG==="es" ? "es-MX" : "en-US",
+    {timeZone:"America/Denver", month:"short", day:"numeric", hour:"numeric", minute:"2-digit"}) : "";
+  box.innerHTML = `<div class="hf-row">
+      <select aria-label="${t("Area","Zona")}" onchange="setHotF('area', this.value)">${opt("", t("All areas","Todas las zonas"), HOT_F.area)}${areas}</select>
+      <select aria-label="${t("Price","Precio")}" onchange="setHotF('price', this.value)">${opt("", t("Any price","Cualquier precio"), HOT_F.price)}${HOT_PRICES.map(p => opt(p[0], t(p[1], p[2]), HOT_F.price)).join("")}</select>
+      <select aria-label="${t("Bedrooms","Recámaras")}" onchange="setHotF('beds', this.value)">${opt("", t("Any beds","Cualquier recámara"), HOT_F.beds)}${opt("3", t("3+ beds","3+ recámaras"), HOT_F.beds)}${opt("4", t("4+ beds","4+ recámaras"), HOT_F.beds)}</select>
+    </div>
+    <div class="hf-meta">${t("Updated daily for your convenience","Actualizada a diario para su comodidad")}${when ? ` · ${t("last update","última actualización")} ${when}` : ""} · ${t(`Showing ${shown} of ${total}`, `Mostrando ${shown} de ${total}`)}</div>`;
+}
+
 function renderHot(){
   const root = document.getElementById("hot-module");
   if(!root || !window.HOT_LISTINGS) return;
   const fmt = n => "$" + n.toLocaleString("en-US");
   const t = (en,es) => LANG==="es" ? es : en;
-  root.innerHTML = window.HOT_LISTINGS.map(l => `
+  const matches = window.HOT_LIVE ? hotMatches() : window.HOT_LISTINGS;
+  const list = window.HOT_LIVE && !HOT_ALL ? matches.slice(0, 12) : matches;
+  renderHotFilters(list.length, matches.length);
+  const more = document.getElementById("hot-more");
+  if(more) more.remove();
+  if(window.HOT_LIVE && matches.length > list.length){
+    root.insertAdjacentHTML("afterend", `<button id="hot-more" class="btn btn-gold hf-more" onclick="HOT_ALL=true;renderHot()">${t(`Show all ${matches.length}`, `Ver las ${matches.length}`)}</button>`);
+  }
+  if(window.HOT_LIVE && !matches.length){
+    root.innerHTML = `<div class="hf-empty">${t("No homes match right now. Try a wider range, or ask me and I'll search the full MLS for you.",
+      "Ninguna casa coincide ahora. Pruebe un rango más amplio, o pregúnteme y busco en todo el MLS.")}</div>`;
+    return;
+  }
+  root.innerHTML = list.map(l => `
     ${l.url?`<a href="${l.url}" target="_blank" rel="noopener" class="hcard" style="color:inherit">`:`<div class="hcard">`}
       <div class="hphoto">
         <span class="hribbon">🔥 ${LANG==="es" ? l.hot.es : l.hot.en}</span>

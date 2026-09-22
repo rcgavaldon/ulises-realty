@@ -433,6 +433,21 @@ def _add_to_cal_link(title, start, minutes=20, details=""):
             f"&details={quote_plus(details[:300])}")
 
 
+# the part of town a buyer thinks in, from property_data's finer areas
+_REGION = {
+    "west side": "west", "upper valley": "west", "cimarron": "west", "coronado": "west",
+    "kern place": "west", "sunset heights": "west", "canutillo": "west", "anthony": "west",
+    "central": "central", "fort bliss": "central", "northeast": "northeast",
+    "east side": "east", "far east": "far east", "horizon city": "horizon",
+    "mission valley": "lower valley", "socorro": "lower valley",
+}
+
+
+def _region(postal: str) -> str:
+    from property_data import classify
+    return _REGION.get(classify(str(postal or ""))[0], "")
+
+
 def _last_call_line(lead) -> str:
     """Gist of the last call, short enough to ride in a prompt variable."""
     s = " ".join(str((lead or {}).get("last_summary") or "").split())
@@ -543,7 +558,7 @@ def api():
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api", "rev": "v19-hotsheet"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "v20-hot-filters"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.
@@ -611,7 +626,7 @@ def api():
             "live": True,
             "synced_at": cache.get("ts"),
             "featured": cache.get("featured", []),
-            "hot": cache.get("hot", []),
+            "hot": [{**l, "region": _region(l.get("postal"))} for l in cache.get("hot", [])],
         }
 
     # ── public: open phone-call slots for the site's booking picker ──────────
