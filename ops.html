@@ -133,7 +133,7 @@ function render(){
         return `<tr class="row" onclick="OPEN = OPEN==='${esc(c.id)}' ? null : '${esc(c.id)}'; render()">
           <td>${when(c.start)}</td>
           <td><span class="pill ${c.dir==="inbound"?"p-in":""}">${c.dir==="inbound"?"in":"out"} · ${c.lang}</span></td>
-          <td><b>${esc(c.who) || "—"}</b><div class="small">${phone(c.num)}</div></td>
+          <td><b>${c.who && !/^(unknown|none)$/i.test(c.who) ? esc(c.who) : "—"}</b><div class="small">${phone(c.num)}</div></td>
           <td>${mmss(c.secs||0)}</td>
           <td class="hide-m small">${esc(c.end)}</td>
           <td>${typePill(c)}</td>
