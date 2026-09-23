@@ -94,6 +94,16 @@ def _our_numbers() -> set:
     return {n for n in (SOFIA_NUMBER, os.environ.get("FROM_NUMBER", "")) if n}
 
 
+def _log_msg(**m):
+    """Operator log of every text in and out (last 300). Never breaks a send."""
+    try:
+        log = state.get("msg_log", []) or []
+        log.append({"ts": time.time(), **m})
+        state["msg_log"] = log[-300:]
+    except Exception:
+        pass
+
+
 def _sms(to: str, text: str):
     import httpx
     try:
@@ -103,8 +113,16 @@ def _sms(to: str, text: str):
             json={"from": _sms_from(), "to": to, "text": text[:1500]},
             timeout=15,
         )
-        return r.status_code < 300
-    except Exception:
+        ok = r.status_code < 300
+        try:
+            mid = (r.json().get("data") or {}).get("id") or ""
+        except Exception:
+            mid = ""
+        _log_msg(dir="out", num=to, text=text[:320], id=mid,
+                 status="sent" if ok else f"failed {r.status_code}")
+        return ok
+    except Exception as e:
+        _log_msg(dir="out", num=to, text=text[:320], id="", status=f"failed: {str(e)[:60]}")
         return False
 
 
@@ -186,6 +204,104 @@ def _bump_sig(ok: bool):
     s[f"last_{k}_ts"] = time.time()
     state["retell_sig"] = s
     return had_ok
+
+
+_FINAL_SMS = ("delivered", "delivery_failed", "sending_failed", "delivery_unconfirmed")
+
+
+def _ops_snapshot() -> dict:
+    """Robert's operator view: calls straight from Retell, texts from our log
+    (delivery status looked up at Telnyx until final), and system health."""
+    import httpx
+    from concurrent.futures import ThreadPoolExecutor
+    out = {}
+    s = state.get("settings", {}) or {}
+    labels = {s.get("owner_cell") or "": "Ulises", os.environ.get("OWNER_CELL", ""): "Robert",
+              SOFIA_NUMBER: "Sofia line"}
+    labels.pop("", None)
+    names = {}
+
+    def who(num):
+        num = num or ""
+        if num in labels:
+            return labels[num]
+        if num not in names:
+            names[num] = ((state.get(f"lead:{num}", None) or {}).get("name") or "") if num else ""
+        return names[num]
+
+    calls = []
+    try:
+        r = httpx.post("https://api.retellai.com/v2/list-calls", timeout=20,
+                       headers={"Authorization": f"Bearer {os.environ['RETELL_API_KEY']}"},
+                       json={"filter_criteria": {"agent_id": [os.environ["AGENT_EN"], os.environ["AGENT_ES"]]},
+                             "sort_order": "descending", "limit": 40})
+        for c in (r.json() if r.status_code < 300 else []):
+            an = c.get("call_analysis") or {}
+            cu = an.get("custom_analysis_data") or {}
+            other = c.get("from_number") if c.get("direction") == "inbound" else c.get("to_number")
+            calls.append({
+                "id": c.get("call_id"), "start": (c.get("start_timestamp") or 0) / 1000,
+                "dir": c.get("direction"), "num": other or "", "who": who(other) or cu.get("caller_name") or "",
+                "secs": round((c.get("duration_ms") or 0) / 1000), "end": c.get("disconnection_reason") or "",
+                "lang": "ES" if c.get("agent_id") == os.environ.get("AGENT_ES") else "EN",
+                "summary": an.get("call_summary") or "", "type": cu.get("caller_type") or "",
+                "intent": cu.get("intent") or "", "email": cu.get("email_spoken") or "",
+                "message": cu.get("message_for_ulises") or "", "questions": cu.get("open_questions") or "",
+                "recording": c.get("recording_url") or "", "transcript": (c.get("transcript") or "")[:6000],
+            })
+    except Exception as e:
+        out["calls_error"] = str(e)[:120]
+    out["calls"] = calls
+
+    log = (state.get("msg_log", []) or [])[-150:][::-1]
+    th = {"Authorization": f"Bearer {os.environ.get('TELNYX_API_KEY', '')}"}
+
+    def status(m):
+        if m.get("dir") != "out" or not m.get("id") or m.get("status") in _FINAL_SMS \
+                or str(m.get("status", "")).startswith("failed"):
+            return m
+        try:
+            d = httpx.get(f"https://api.telnyx.com/v2/messages/{m['id']}", headers=th, timeout=8).json().get("data") or {}
+            st = ((d.get("to") or [{}])[0] or {}).get("status") or m.get("status")
+            errs = d.get("errors") or []
+            return {**m, "status": st, "error": errs[0].get("title", "") if errs else ""}
+        except Exception:
+            return m
+
+    with ThreadPoolExecutor(8) as ex:
+        texts = list(ex.map(status, log[:60])) + log[60:]
+    final = {m["id"]: m["status"] for m in texts if m.get("id") and m.get("status") in _FINAL_SMS}
+    if final:                              # remember final statuses: later loads skip them
+        cur = state.get("msg_log", []) or []
+        changed = False
+        for m in cur:
+            if m.get("id") in final and m.get("status") != final[m["id"]]:
+                m["status"] = final[m["id"]]
+                changed = True
+        if changed:
+            state["msg_log"] = cur
+    for m in texts:
+        m["who"] = who(m.get("num"))
+    out["texts"] = texts
+
+    cache = state.get("listings_cache", {}) or {}
+    out["health"] = {
+        "last_tick_ts": state.get("last_tick_ts"), "retell_sig": state.get("retell_sig") or {},
+        "sierra": {"configured": _sierra_configured(), "fail_note": state.get("sierra_fail_note", "")},
+        "hotsheet": {"ts": cache.get("ts"), "homes": len(cache.get("hot") or []),
+                     "fail_note": state.get("spark_fail_note", "")},
+        "alerts_to": s.get("owner_cell") or os.environ.get("OWNER_CELL", ""),
+        "numbers": {"calls_from": _call_from(), "texts_from": _sms_from()},
+    }
+    alerts = []
+    try:
+        for k in list(state.keys()):
+            if str(k).startswith("alert:"):
+                alerts.append({"key": str(k)[6:], "ts": state.get(k)})
+    except Exception:
+        pass
+    out["alerts"] = sorted(alerts, key=lambda a: -(a["ts"] or 0))[:15]
+    return out
 
 
 def _sierra_configured() -> bool:
@@ -584,7 +700,7 @@ def api():
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api", "rev": "v22-start-event-confirmed"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "v23-ops"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.
@@ -1233,6 +1349,7 @@ def api():
                 return {"ok": True}
             seen.append(mid)
             state["sms_seen"] = seen[-300:]
+        _log_msg(dir="in", num=frm, text=text[:320], id=mid, status="received")
         toks = __import__("re").findall(r"[a-z0-9áéíóúñü]+", text.lower())
         word = toks[0] if toks else ""
         # "stop"-type words count anywhere; everyday words like "cancel" or "end"
@@ -1936,6 +2053,13 @@ def api():
 
     def _admin_ok(req: Request) -> bool:
         return _role(req) is not None
+
+    @web.get("/admin/ops")
+    async def admin_ops(req: Request):
+        """Robert's operator view of Ulises's line. Owner only."""
+        if _role(req) != "owner":
+            return JSONResponse({"error": "forbidden"}, status_code=403)
+        return await asyncio.to_thread(_ops_snapshot)
 
     @web.get("/admin/overview")
     def admin_overview(req: Request):

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Ulises · Operator</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--navy:#0e1b2c;--gold:#c9a227;--paper:#f6f3ec;--line:#e3ddcf;--muted:#6b7380;--ok:#1e7a4f;--bad:#b3402e;--warn:#a35c00}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--paper);color:#1b2430;font-size:14px}
+  header{background:var(--navy);color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;position:sticky;top:0;z-index:5}
+  header b{font-size:1.05rem;letter-spacing:.04em}
+  header .meta{font-size:.8rem;color:#b9c6d6}
+  header button{background:var(--gold);border:0;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer}
+  main{max-width:1200px;margin:0 auto;padding:16px}
+  .health{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:16px}
+  .h{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+  .h .k{font-size:.7rem;font-weight:700;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+  .h .v{font-size:1rem;font-weight:700;margin-top:3px}
+  .ok{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+  .tabs{display:flex;gap:8px;margin:6px 0 10px;flex-wrap:wrap;align-items:center}
+  .tabs button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:7px 14px;font-weight:600;cursor:pointer}
+  .tabs button.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+  .tabs input{flex:1;min-width:160px;max-width:320px;padding:8px 12px;border:1px solid var(--line);border-radius:999px;font:inherit}
+  table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  th{background:#fbfaf6;text-align:left;font-size:.72rem;color:var(--muted);letter-spacing:.05em;text-transform:uppercase;padding:9px 10px;border-bottom:1px solid var(--line)}
+  td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr.row{cursor:pointer} tr.row:hover td{background:#fcfbf7}
+  .pill{display:inline-block;border-radius:999px;padding:2px 9px;font-size:.72rem;font-weight:700;background:#eef0f3;color:#445}
+  .p-ok{background:#e6f4ec;color:var(--ok)} .p-bad{background:#fbe9e5;color:var(--bad)} .p-warn{background:#fff3df;color:var(--warn)}
+  .p-in{background:#e8f1fb;color:#1c4f86} .p-msg{background:#fff8e1;color:#7a5a00}
+  .detail td{background:#fbfaf6;font-size:.85rem;white-space:pre-wrap}
+  .small{font-size:.78rem;color:var(--muted)}
+  .hide{display:none}
+  .gate{max-width:420px;margin:60px auto;background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px}
+  .gate input{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;margin:10px 0;font:inherit}
+  @media(max-width:700px){.hide-m{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <div><b>ULISES · OPERATOR</b> <span class="meta" id="stamp"></span></div>
+  <div><label class="meta"><input type="checkbox" id="auto" checked> auto-refresh</label> <button onclick="load()">Refresh</button></div>
+</header>
+<main>
+  <div id="gate" class="gate hide">
+    <b>Owner token</b>
+    <input id="tok" type="password" placeholder="paste the owner token" onkeydown="if(event.key==='Enter')unlock()">
+    <button onclick="unlock()" style="background:var(--gold);border:0;border-radius:8px;padding:9px 14px;font-weight:700">Open</button>
+    <p class="small" id="gateMsg"></p>
+  </div>
+  <div id="app" class="hide">
+    <div class="health" id="health"></div>
+    <div class="tabs">
+      <button id="tab-calls" class="on" onclick="show('calls')">Calls</button>
+      <button id="tab-texts" onclick="show('texts')">Texts</button>
+      <button id="tab-alerts" onclick="show('alerts')">Alerts</button>
+      <input id="q" placeholder="search name, number or words…" oninput="render()">
+    </div>
+    <div id="view"></div>
+  </div>
+</main>
+<script>
+const API = "https://roberto-gavaldon3--ulises-realty-api-api.modal.run";
+let TOKEN = "", D = null, TAB = "calls", OPEN = null;
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const when = t => t ? new Date(t * 1000).toLocaleString("en-US", {timeZone:"America/Denver", month:"short", day:"numeric", hour:"numeric", minute:"2-digit"}) : "—";
+const ago = t => { if(!t) return "never"; const m = Math.round((Date.now()/1000 - t) / 60); return m < 60 ? `${m} min ago` : m < 2880 ? `${Math.round(m/60)} h ago` : `${Math.round(m/1440)} d ago`; };
+const phone = n => { const d = String(n||"").replace(/\D/g,"").slice(-10); return d.length === 10 ? `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}` : esc(n); };
+const mmss = s => `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
+const safeUrl = u => /^https:\/\/[^\s"'<>]+$/.test(u || "") ? u : "";
+
+async function load(){
+  try{
+    const r = await fetch(API + "/admin/ops", {headers: {"x-admin-token": TOKEN}});
+    if(r.status === 403){ lock("That token isn't the owner token."); return; }
+    D = await r.json();
+    document.getElementById("stamp").textContent = "updated " + new Date().toLocaleTimeString("en-US", {hour:"numeric", minute:"2-digit"});
+    renderHealth(); render();
+  }catch(e){ document.getElementById("stamp").textContent = "couldn't reach the server — retrying"; }
+}
+function lock(msg){
+  document.getElementById("app").classList.add("hide");
+  document.getElementById("gate").classList.remove("hide");
+  document.getElementById("gateMsg").textContent = msg || "";
+}
+function unlock(){
+  TOKEN = document.getElementById("tok").value.trim();
+  if(!TOKEN) return;
+  document.getElementById("gate").classList.add("hide");
+  document.getElementById("app").classList.remove("hide");
+  load();
+}
+function show(t){ TAB = t; OPEN = null; ["calls","texts","alerts"].forEach(x => document.getElementById("tab-"+x).classList.toggle("on", x===t)); render(); }
+
+function renderHealth(){
+  const h = D.health || {}, sig = h.retell_sig || {}, hs = h.hotsheet || {};
+  const tickMin = h.last_tick_ts ? (Date.now()/1000 - h.last_tick_ts) / 60 : 999;
+  const card = (k, v, cls) => `<div class="h"><div class="k">${k}</div><div class="v ${cls||""}">${v}</div></div>`;
+  document.getElementById("health").innerHTML =
+    card("5-min timer", ago(h.last_tick_ts), tickMin < 12 ? "ok" : "bad") +
+    card("Call reports", `${sig.ok||0} signed · ${sig.confirmed||0} confirmed`, "ok") +
+    card("Sierra", h.sierra && h.sierra.configured ? (h.sierra.fail_note ? "on · " + esc(h.sierra.fail_note).slice(0,40) : "on · no errors") : "off", h.sierra && h.sierra.configured && !h.sierra.fail_note ? "ok" : "warn") +
+    card("Hot sheet", `${hs.homes||0} homes · ${ago(hs.ts)}`, hs.fail_note ? "warn" : "ok") +
+    card("Lead texts go to", phone(h.alerts_to)) +
+    card("Sofia line", phone((h.numbers||{}).calls_from));
+}
+
+function match(obj){
+  const q = document.getElementById("q").value.trim().toLowerCase();
+  if(!q) return true;
+  return JSON.stringify(obj).toLowerCase().includes(q) || String(obj.num||"").replace(/\D/g,"").includes(q.replace(/\D/g,"") || "@@");
+}
+
+function typePill(c){
+  if(c.type === "client") return `<span class="pill p-ok">client</span>`;
+  if(c.type === "personal" || c.type === "business") return `<span class="pill p-msg">${esc(c.type)} · message</span>`;
+  if(c.secs < 12) return `<span class="pill">no talk</span>`;
+  return c.type ? `<span class="pill">${esc(c.type)}</span>` : "";
+}
+
+function render(){
+  const v = document.getElementById("view");
+  if(!D){ v.innerHTML = ""; return; }
+  if(TAB === "calls"){
+    const rows = (D.calls || []).filter(match);
+    v.innerHTML = (D.calls_error ? `<p class="bad">Retell: ${esc(D.calls_error)}</p>` : "") + `<table><tr><th>When (MT)</th><th>Dir</th><th>Who</th><th>Length</th><th class="hide-m">Ended</th><th>Type</th><th class="hide-m">Summary</th></tr>` +
+      (rows.map(c => {
+        const open = OPEN === c.id;
+        const rec = safeUrl(c.recording);
+        return `<tr class="row" onclick="OPEN = OPEN==='${esc(c.id)}' ? null : '${esc(c.id)}'; render()">
+          <td>${when(c.start)}</td>
+          <td><span class="pill ${c.dir==="inbound"?"p-in":""}">${c.dir==="inbound"?"in":"out"} · ${c.lang}</span></td>
+          <td><b>${esc(c.who) || "—"}</b><div class="small">${phone(c.num)}</div></td>
+          <td>${mmss(c.secs||0)}</td>
+          <td class="hide-m small">${esc(c.end)}</td>
+          <td>${typePill(c)}</td>
+          <td class="hide-m small">${esc((c.summary||"").slice(0,140))}</td></tr>` +
+          (open ? `<tr class="detail"><td colspan="7">${c.message && c.message!=="none" ? `<b>💬 Message:</b> ${esc(c.message)}\n` : ""}${c.questions && c.questions!=="none" ? `<b>❓ Asked:</b> ${esc(c.questions)}\n` : ""}${c.email && c.email!=="none" ? `<b>✉️ Email heard:</b> ${esc(c.email)}\n` : ""}${rec ? `<a href="${rec}" target="_blank" rel="noopener">▶ recording</a>\n` : ""}<b>Summary:</b> ${esc(c.summary)}\n\n${esc(c.transcript)}</td></tr>` : "");
+      }).join("") || `<tr><td colspan="7" class="small">No calls yet.</td></tr>`) + `</table>`;
+  } else if(TAB === "texts"){
+    const rows = (D.texts || []).filter(match);
+    const st = s => {
+      const x = String(s||"");
+      if(x === "delivered") return `<span class="pill p-ok">delivered</span>`;
+      if(x === "received") return `<span class="pill p-in">received</span>`;
+      if(x.startsWith("failed") || x.includes("failed")) return `<span class="pill p-bad">${esc(x)}</span>`;
+      return `<span class="pill p-warn">${esc(x || "sent")}</span>`;
+    };
+    v.innerHTML = `<table><tr><th>When (MT)</th><th>Dir</th><th>Who</th><th>Text</th><th>Status</th></tr>` +
+      (rows.map(m => `<tr><td>${when(m.ts)}</td><td><span class="pill ${m.dir==="in"?"p-in":""}">${m.dir==="in"?"in":"out"}</span></td>
+        <td><b>${esc(m.who) || "—"}</b><div class="small">${phone(m.num)}</div></td>
+        <td style="white-space:pre-wrap">${esc(m.text)}</td><td>${st(m.status)}${m.error ? `<div class="small bad">${esc(m.error)}</div>` : ""}</td></tr>`).join("")
+       || `<tr><td colspan="5" class="small">No texts logged yet — every text from here on shows up.</td></tr>`) + `</table>`;
+  } else {
+    const rows = (D.alerts || []).filter(match);
+    v.innerHTML = `<table><tr><th>Last fired (MT)</th><th>Alert</th></tr>` +
+      (rows.map(a => `<tr><td>${when(a.ts)}</td><td>${esc(a.key)}</td></tr>`).join("") || `<tr><td colspan="2" class="small">No alerts.</td></tr>`) + `</table>`;
+  }
+}
+
+const h = new URLSearchParams(location.hash.slice(1));
+if(h.get("t")){ document.getElementById("tok").value = h.get("t"); unlock(); } else { lock(); }
+setInterval(() => { if(TOKEN && document.getElementById("auto").checked && OPEN === null) load(); }, 60000);
+</script>
+</body>
+</html>
