@@ -700,7 +700,7 @@ def api():
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api", "rev": "v23-ops"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "v24a-ops-phone-signin"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.
@@ -2060,6 +2060,41 @@ def api():
         if _role(req) != "owner":
             return JSONResponse({"error": "forbidden"}, status_code=403)
         return await asyncio.to_thread(_ops_snapshot)
+
+    @web.post("/admin/ops-link")
+    def admin_ops_link():
+        """Texts Robert (OWNER_CELL, never anyone else) a one-time sign-in link
+        for ops.html. Anyone can press the button; only Robert's phone gets it.
+        At most one every 3 minutes and 6 a day."""
+        import secrets
+        now = time.time()
+        sent = [t for t in (state.get("ops_link_sent", []) or []) if now - t < 86400]
+        if (sent and now - sent[-1] < 180) or len(sent) >= 6:
+            return {"ok": True, "sent": False}
+        code = secrets.token_urlsafe(18)
+        codes = {c: e for c, e in (state.get("ops_login_codes", {}) or {}).items() if e > now}
+        codes[code] = now + 600
+        state["ops_login_codes"] = codes
+        state["ops_link_sent"] = sent + [now]
+        _sms(os.environ["OWNER_CELL"],
+             "Sign-in link for Ulises's operator page (works once, for 10 minutes):\n"
+             f"https://www.ulisesortegarealty.com/ops.html#c={code}")
+        return {"ok": True, "sent": True}
+
+    @web.post("/admin/ops-login")
+    async def admin_ops_login(req: Request):
+        """Trade a one-time code from that text for the owner token."""
+        try:
+            code = str((await req.json()).get("code") or "")
+        except Exception:
+            code = ""
+        now = time.time()
+        codes = state.get("ops_login_codes", {}) or {}
+        exp = codes.pop(code, None) if code else None
+        state["ops_login_codes"] = {c: e for c, e in codes.items() if e > now}
+        if not exp or exp < now:
+            return JSONResponse({"error": "expired"}, status_code=403)
+        return {"token": os.environ.get("CRON_TOKEN", "")}
 
     @web.get("/admin/overview")
     def admin_overview(req: Request):

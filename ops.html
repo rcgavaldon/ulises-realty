@@ -50,6 +50,8 @@
     <input id="tok" type="password" placeholder="paste the owner token" onkeydown="if(event.key==='Enter')unlock()">
     <button onclick="unlock()" style="background:var(--gold);border:0;border-radius:8px;padding:9px 14px;font-weight:700">Open</button>
     <p class="small" id="gateMsg"></p>
+    <button onclick="textLink(this)" style="width:100%;margin-top:6px;background:var(--navy);color:#fff;border:0;border-radius:8px;padding:11px 14px;font-weight:700">📲 Text me a sign-in link</button>
+    <p class="small">Goes to Robert's phone only. Open it on the phone/browser you want signed in; it works once, for 10 minutes.</p>
   </div>
   <div id="app" class="hide">
     <div class="health" id="health"></div>
@@ -93,6 +95,23 @@ function unlock(){
   document.getElementById("gate").classList.add("hide");
   document.getElementById("app").classList.remove("hide");
   load();
+}
+async function textLink(b){
+  b.disabled = true;
+  try{
+    const j = await (await fetch(API + "/admin/ops-link", {method: "POST"})).json();
+    document.getElementById("gateMsg").textContent = j.sent ? "Sent. Open the link in the text on this phone." : "A link was just sent. Check your texts (a new one can go out in 3 minutes).";
+  }
+  catch(e){ document.getElementById("gateMsg").textContent = "Couldn't reach the server. Try again in a minute."; }
+  setTimeout(() => { b.disabled = false; }, 20000);
+}
+async function redeem(code){
+  try{
+    const r = await fetch(API + "/admin/ops-login", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({code})});
+    const j = await r.json();
+    if(r.ok && j.token){ document.getElementById("tok").value = j.token; unlock(); return; }
+  }catch(e){}
+  lock("That sign-in link expired or was already used. Text yourself a new one.");
 }
 function show(t){ TAB = t; OPEN = null; ["calls","texts","alerts"].forEach(x => document.getElementById("tab-"+x).classList.toggle("on", x===t)); render(); }
 
@@ -166,8 +185,10 @@ function render(){
 const h = new URLSearchParams(location.hash.slice(1));
 let saved = ""; try{ saved = localStorage.getItem("ulises_ops_tok") || ""; }catch(e){}
 const tok0 = h.get("t") || saved;
-if(h.get("t")){ try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){} }
-if(tok0){ document.getElementById("tok").value = tok0; unlock(); } else { lock(); }
+const code0 = h.get("c");
+if(h.get("t") || code0){ try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){} }
+if(code0 && !h.get("t")){ redeem(code0); }
+else if(tok0){ document.getElementById("tok").value = tok0; unlock(); } else { lock(); }
 setInterval(() => { if(TOKEN && document.getElementById("auto").checked && OPEN === null) load(); }, 60000);
 </script>
 </body>
