@@ -233,6 +233,7 @@ def _place_call(lead: dict) -> str:
                 "last_call": _last_call_line(lead),
                 "booked_for": _booked_line(lead),
                 "email_on_file": "yes" if lead.get("email") else "no",
+                **_today_vars(),
             },
             metadata={"source": "ulises-realty", "phone": lead["phone"]},
         )
@@ -357,6 +358,7 @@ def _open_slots(day_dt, limit=3, demo=False):
 STATUS_LABEL = {
     "calling": "Calling now", "no_answer": "No answer", "connected": "Spoke with them",
     "booked": "Booked", "gave_up": "Gave up", "opted_out": "Opted out",
+    "message": "Left a message",
 }
 
 
@@ -466,6 +468,30 @@ def _booked_line(lead) -> str:
     return "none"
 
 
+def _today_vars() -> dict:
+    """Sofia has no calendar of her own: tell her the date on every call."""
+    n = _now_local()
+    return {"today": n.strftime("%A, %B %d, %Y").replace(" 0", " "),
+            "now_time": n.strftime("%I:%M %p").lstrip("0")}
+
+
+def _fix_year(dt, now):
+    """The model sometimes sends a past YEAR (2024-09-23 meaning Sept 23). A
+    date that is past only because of its year moves to its next occurrence,
+    if that lands within ~4 months; anything else is left alone (and refused)."""
+    from datetime import timedelta
+    if dt >= now - timedelta(days=1):
+        return dt
+    for y in (now.year, now.year + 1):
+        try:
+            c = dt.replace(year=y)
+        except ValueError:                # Feb 29
+            continue
+        if now - timedelta(days=1) <= c <= now + timedelta(days=120):
+            return c
+    return dt
+
+
 _DIAS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
 _MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 
@@ -558,7 +584,7 @@ def api():
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api", "rev": "v20-hot-filters"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "v21-callers-and-dates"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.
@@ -1411,6 +1437,15 @@ def api():
             summary = (analysis.get("call_summary") or "").strip()
             if summary:
                 lines.append(f"Summary: {summary[:350]}")
+            # A client = buying / selling / renting / a home value. Personal and
+            # business callers leave a message: never Sierra, never an email text.
+            _ctype = (custom.get("caller_type") or "").strip().lower()
+            _intent = (custom.get("intent") or "").strip().lower()
+            _is_client = _ctype == "client" or (
+                _ctype in ("", "unknown") and _intent in ("buy", "sell", "buysell", "rent", "value"))
+            _msg = (custom.get("message_for_ulises") or "").strip()
+            if _msg.lower() in ("none", "n/a", "unknown"):
+                _msg = ""
             _bp = (custom.get("best_phone") or "").strip()
             if _bp and _bp.lower() not in ("same", "none", "unknown", "n/a"):
                 lines.append(f"Best number: {_bp}")
@@ -1448,6 +1483,12 @@ def api():
                 if _known.get("source") == "inbound_call" and _cl.startswith(("sp", "es")):
                     _upd["lang"] = "es"
                 _it = (custom.get("intent") or "").strip().lower()
+                _upd["caller_type"] = _ctype or ("client" if _is_client else "unknown")
+                if _msg:
+                    _upd["message_left"] = _msg[:400]
+                if _connected and not _is_client and _known.get("source") == "inbound_call" \
+                        and _known.get("status") != "booked":
+                    _upd["status"] = "message"
                 if _it in INTEREST and _it != "other" and _known.get("interest") in (None, "", "other"):
                     _upd["interest"] = _it
                     _upd["interest_desc"] = INTEREST[_it][_known.get("lang", "en")]
@@ -1479,12 +1520,40 @@ def api():
                         lines.append(f"-> Sierra #{lid} is now on {got[1] or got[0]}: no note added")
                 except Exception:
                     pass
+            # A client who gave their email on the call goes to Sierra now, the
+            # same way a website lead does (Sofia read the email back to them).
+            if trusted and _connected and _is_client and _known and not _known.get("demo") \
+                    and not _known.get("sierra_lead_id") \
+                    and _known.get("sierra_status") in (None, "", "no_email"):
+                if not _known.get("email"):
+                    _raw = (custom.get("email_spoken") or "").strip().lower()
+                    _heard = _raw if EMAIL_RE.fullmatch(_raw) else _spoken_email(_raw)
+                    if _heard:
+                        _touch_lead(phone, email=_heard, email_from_call=True)
+                        _known["email"] = _heard
+                if _known.get("email"):
+                    _sl = await asyncio.to_thread(_sierra_push, state.get(f"lead:{phone}", {}) or _known)
+                    _bg(_confirm_soon(phone))
+                    if _sl:
+                        lines.append(_sl)
             # No email on file (they phoned in) -> one text asking for it.
-            if trusted and _connected and _known and not _known.get("email") \
+            if trusted and _connected and _is_client and _known and not _known.get("email") \
                     and not _known.get("email_asked_ts") \
                     and not _blocked(phone):
                 _ask_email(_known, custom.get("email_spoken") or "")
                 lines.append("-> no email on file: texted them for it")
+            if _connected and not _is_client:
+                # not a buyer/seller: Ulises gets the message, plainly
+                _who = _known.get("name") or (custom.get("caller_name") or "").strip() or "Someone"
+                lines = [f"💬 MESSAGE FOR ULISES — {_who} {phone}"]
+                lines.append(f"Message: {_msg[:400]}" if _msg else
+                             (f"Summary: {summary[:350]}" if summary else "No message left."))
+                if _bp and _bp.lower() not in ("same", "none", "unknown", "n/a"):
+                    lines.append(f"Best number: {_bp}")
+                if _ctype in ("personal", "business"):
+                    lines.append(f"({_ctype} call - not a lead, nothing sent to Sierra)")
+                if rec:
+                    lines.append(f"Rec: {rec}")
             _sms_owner("\n".join(lines))
             return {"ok": True}
 
@@ -1570,6 +1639,7 @@ def api():
                     "last_call": _last_call_line(known or {}),
                     "booked_for": _booked_line(known),
                     "email_on_file": "yes" if (known or {}).get("email") else "no",
+                    **_today_vars(),
                 },
                 agent_override={"retell_llm": {"begin_message": begin}},
             )
@@ -1740,6 +1810,7 @@ def api():
                 start = start.replace(tzinfo=tz)
             start = start.astimezone(tz)        # an offset from the model -> El Paso time
             now = datetime.now(tz)
+            start = _fix_year(start, now)       # "2024-09-23" meant this Sept 23
             if start < now + timedelta(minutes=MIN_NOTICE_MIN):
                 alts = _open_slots(max(start, now), limit=2, demo=_is_demo(phone))
                 alt = " or ".join(a.strftime("%A %I:%M %p").replace(" 0", " ") for a in alts)
@@ -1833,6 +1904,8 @@ def api():
             base = datetime.fromisoformat(date_str).replace(tzinfo=tz) if date_str \
                 else datetime.now(tz)
             today = datetime.now(tz)
+            if date_str:
+                base = _fix_year(base, today)
             if date_str and base.date() < today.date():
                 return {"result": f"That date has passed. Today is {today:%A %B %d, %Y}. "
                                   "Ask which upcoming day works."}
@@ -1879,7 +1952,7 @@ def api():
                         "prequalified", "own_rent", "move_date", "ts",
                         "status", "attempts", "next_at", "booked_for", "demo",
                         "email", "source", "sierra_status", "sierra_lead_id", "awaiting_email",
-                        "open_questions")}
+                        "open_questions", "caller_type", "message_left")}
                 row["level"] = _lead_level(l)
                 row["calls"] = (l.get("calls") or [])[-6:][::-1]
                 row["status_label"] = STATUS_LABEL.get(l.get("status", ""), "New")
@@ -1940,8 +2013,26 @@ def api():
             if k in body and _role(req) == "owner":
                 v = str(body[k] or "").strip()
                 s[k] = (norm_phone(v) or "") if v else ""
+        # His Flexmls shared link (client or owner may set it). Only a real
+        # Flexmls share is accepted; the new list is pulled right away.
+        refresh = False
+        if "hotsheet_share" in body:
+            import re as _re
+            v = str(body.get("hotsheet_share") or "").strip()
+            m = _re.match(r"^https://my\.flexmls\.com/[A-Za-z0-9_-]+/search/shared_links/[A-Za-z0-9_-]+", v)
+            if m:
+                s["hotsheet_share"] = m.group(0)
+                refresh = True
+            elif not v:
+                s.pop("hotsheet_share", None)
+                refresh = True
+            else:
+                return JSONResponse({"error": "not a Flexmls shared link"}, status_code=400)
         state["settings"] = s
-        return {"ok": True, "settings": _settings()}
+        out = {"ok": True, "settings": _settings()}
+        if refresh:
+            out["hotsheet"] = await asyncio.to_thread(spark_sync, True)
+        return out
 
     @web.post("/admin/reset-lead")
     async def admin_reset_lead(req: Request):
@@ -2000,7 +2091,7 @@ def spark_sync(force: bool, stale_after: int = SPARK_STALE_AFTER):
                 featured = spark_client.my_listings()
             except Exception:
                 featured = []
-        hot = flex_share.fetch()
+        hot = flex_share.fetch((state.get("settings", {}) or {}).get("hotsheet_share") or flex_share.SHARE)
         hot_raw = [] if hot or not spark_client.configured() else spark_client.hot_sheet()
         for l in hot_raw[:6]:
             tag, tag_es = "Just Listed", "Recién Publicada"

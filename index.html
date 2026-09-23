@@ -148,7 +148,9 @@
   .hf-row select{padding:9px 12px;border:1px solid #d6d0c4;border-radius:10px;background:#fff;font:inherit;font-size:.88rem;min-width:0;flex:1 1 150px;max-width:230px}
   .hf-meta{font-size:.8rem;color:#777;margin-top:8px}
   .hf-empty{grid-column:1/-1;padding:28px;text-align:center;color:#666;background:#faf7f1;border-radius:14px}
-  .hf-more{display:block;margin:22px auto 0}
+  .hf-pager{display:flex;align-items:center;justify-content:center;gap:16px;margin-top:24px;font-size:.9rem}
+  .hf-pager .btn{color:inherit;border-color:#d6d0c4;padding:10px 18px}
+  .hf-pager .btn[disabled]{opacity:.35;pointer-events:none}
   .hspecs{display:flex;gap:14px;margin-top:auto;padding-top:12px;border-top:1px solid var(--line);font-size:.82rem;color:var(--muted)}
   .hspecs b{color:var(--ink)}
 
@@ -963,8 +965,10 @@ const HOT_REGIONS = [["west","West Side","Oeste"],["central","Central","Centro"]
 const HOT_PRICES = [["0-250000","Under $250k","Menos de $250k"],["250000-350000","$250k – $350k","$250k – $350k"],
   ["350000-500000","$350k – $500k","$350k – $500k"],["500000-","$500k+","$500k+"]];
 const HOT_F = {area:"", price:"", beds:""};
-let HOT_ALL = false;
-function setHotF(k, v){ HOT_F[k] = v; HOT_ALL = false; renderHot(); }
+const HOT_PER = 12;
+let HOT_PAGE = 0;
+function setHotF(k, v){ HOT_F[k] = v; HOT_PAGE = 0; renderHot(); }
+function hotGo(p){ HOT_PAGE = p; renderHot(); document.getElementById("hot").scrollIntoView({behavior:"smooth"}); }
 function hotMatches(){
   return (window.HOT_LISTINGS || []).filter(l => {
     if(HOT_F.area && l.region !== HOT_F.area) return false;
@@ -998,12 +1002,18 @@ function renderHot(){
   const fmt = n => "$" + n.toLocaleString("en-US");
   const t = (en,es) => LANG==="es" ? es : en;
   const matches = window.HOT_LIVE ? hotMatches() : window.HOT_LISTINGS;
-  const list = window.HOT_LIVE && !HOT_ALL ? matches.slice(0, 12) : matches;
+  const pages = Math.max(1, Math.ceil(matches.length / HOT_PER));
+  if(HOT_PAGE >= pages) HOT_PAGE = pages - 1;
+  const list = window.HOT_LIVE ? matches.slice(HOT_PAGE * HOT_PER, (HOT_PAGE + 1) * HOT_PER) : matches;
   renderHotFilters(list.length, matches.length);
-  const more = document.getElementById("hot-more");
-  if(more) more.remove();
-  if(window.HOT_LIVE && matches.length > list.length){
-    root.insertAdjacentHTML("afterend", `<button id="hot-more" class="btn btn-gold hf-more" onclick="HOT_ALL=true;renderHot()">${t(`Show all ${matches.length}`, `Ver las ${matches.length}`)}</button>`);
+  const pager = document.getElementById("hot-pager");
+  if(pager) pager.remove();
+  if(window.HOT_LIVE && pages > 1){
+    root.insertAdjacentHTML("afterend", `<div id="hot-pager" class="hf-pager">
+      <button class="btn btn-ghost" ${HOT_PAGE === 0 ? "disabled" : ""} onclick="hotGo(${HOT_PAGE - 1})">‹ ${t("Prev","Anterior")}</button>
+      <span>${t(`Page ${HOT_PAGE + 1} of ${pages}`, `Página ${HOT_PAGE + 1} de ${pages}`)}</span>
+      <button class="btn btn-ghost" ${HOT_PAGE === pages - 1 ? "disabled" : ""} onclick="hotGo(${HOT_PAGE + 1})">${t("Next","Siguiente")} ›</button>
+    </div>`);
   }
   if(window.HOT_LIVE && !matches.length){
     root.innerHTML = `<div class="hf-empty">${t("No homes match right now. Try a wider range, or ask me and I'll search the full MLS for you.",
