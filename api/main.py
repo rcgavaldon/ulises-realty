@@ -137,7 +137,16 @@ def _owner_cells() -> list[str]:
     return cells
 
 
+def _dash_link() -> str:
+    """Ulises's dashboard, signed in, for the foot of every notification."""
+    tok = (state.get("settings", {}) or {}).get("client_token") or ""
+    return f"https://www.ulisesortegarealty.com/admin.html#t={tok}" if tok else ""
+
+
 def _sms_owner(text: str):
+    link = _dash_link()
+    if link:
+        text = f"{text[:1500 - len(link) - 14]}\nDashboard: {link}"
     for cell in _owner_cells():
         _sms(cell, text)
 
@@ -700,7 +709,7 @@ def api():
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api", "rev": "v24a-ops-phone-signin"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "v24b-dash-messages-contacts-thanks"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.
@@ -1603,6 +1612,7 @@ def api():
                 _upd["caller_type"] = _ctype or ("client" if _is_client else "unknown")
                 if _msg:
                     _upd["message_left"] = _msg[:400]
+                    _upd["message_ts"] = time.time()
                 if _connected and not _is_client and _known.get("source") == "inbound_call" \
                         and _known.get("status") != "booked":
                     _upd["status"] = "message"
@@ -1659,6 +1669,25 @@ def api():
                     and not _blocked(phone):
                 _ask_email(_known, custom.get("email_spoken") or "")
                 lines.append("-> no email on file: texted them for it")
+            elif trusted and _connected and _is_client and _known and not _blocked(phone) \
+                    and _known.get("status") != "booked" \
+                    and time.time() - float(_known.get("thanked_ts") or 0) > 86400:
+                _first = ((_known.get("name") or "").split() or [""])[0]
+                if _known.get("lang") == "es":
+                    _ty = (f"Hola {_first}, " if _first else "Hola, ") + \
+                        ("¡gracias por llamar a Ulises Ortega Bienes Raíces! " if direction == "inbound" else
+                         "soy Sofía, de Ulises Ortega Bienes Raíces. ¡Gracias por su tiempo en la llamada! ") + \
+                        "Ulises ya tiene sus datos y le dará seguimiento pronto. ¿Alguna pregunta? Responda aquí. " \
+                        "Responda STOP para no ser contactado."
+                else:
+                    _ty = (f"Hi {_first}, " if _first else "Hi, ") + \
+                        ("thanks for calling Ulises Ortega Real Estate! " if direction == "inbound" else
+                         "this is Sofia with Ulises Ortega Real Estate. Thanks for your time on the call! ") + \
+                        "Ulises has your details and will follow up soon. Questions before then? Just reply here. " \
+                        "Reply STOP to opt out."
+                if _sms(phone, _ty):
+                    _touch_lead(phone, thanked_ts=time.time())
+                    lines.append("-> thank-you text sent")
             if _connected and not _is_client:
                 # not a buyer/seller: Ulises gets the message, plainly
                 _who = _known.get("name") or (custom.get("caller_name") or "").strip() or "Someone"
@@ -2096,6 +2125,42 @@ def api():
             return JSONResponse({"error": "expired"}, status_code=403)
         return {"token": os.environ.get("CRON_TOKEN", "")}
 
+    def _dash_people():
+        """For his dashboard: messages for Ulises (left on a call or texted in),
+        newest first, and everyone on file as a contact list. His own
+        notifications and Robert's alerts are left out."""
+        from concurrent.futures import ThreadPoolExecutor
+        skip = {c[-10:] for c in _owner_cells()} | {os.environ.get("OWNER_CELL", "")[-10:]}
+        phones = list(dict.fromkeys((state.get("lead_index", []) or [])[::-1]))[:200]
+        with ThreadPoolExecutor(8) as ex:
+            recs = dict(zip(phones, ex.map(lambda p: state.get(f"lead:{p}", None) or {}, phones)))
+
+        def last_ts(l):
+            return max([float(l.get("ts") or 0)] + [float(c.get("ts") or 0) for c in (l.get("calls") or [])])
+
+        msgs = []
+        for m in (state.get("msg_log", []) or []):
+            num = str(m.get("num") or "")
+            if m.get("dir") == "in" and num and num[-10:] not in skip:
+                msgs.append({"ts": m.get("ts"), "via": "text", "num": num, "text": m.get("text", "")})
+        for p, l in recs.items():
+            if l.get("message_left"):
+                msgs.append({"ts": l.get("message_ts") or last_ts(l), "via": "call", "num": p,
+                             "text": l["message_left"], "type": l.get("caller_type") or ""})
+        for m in msgs:
+            m["who"] = (recs.get(m["num"]) or {}).get("name") or ""
+        msgs.sort(key=lambda m: -(m.get("ts") or 0))
+        contacts = []
+        for p, l in recs.items():
+            if not l or p[-10:] in skip:
+                continue
+            contacts.append({"name": l.get("name") or "", "phone": p, "email": l.get("email") or "",
+                             "type": l.get("caller_type") or ("client" if l.get("source") != "inbound_call" else ""),
+                             "status": STATUS_LABEL.get(l.get("status", ""), "New"), "last": last_ts(l),
+                             "calls": len(l.get("calls") or [])})
+        contacts.sort(key=lambda c: -c["last"])
+        return {"messages": msgs[:80], "contacts": contacts}
+
     @web.get("/admin/overview")
     def admin_overview(req: Request):
         if not _admin_ok(req):
@@ -2126,6 +2191,7 @@ def api():
             "week": state.get(f"stats:{wk[0]}-w{wk[1]}", {}),
             "leads": leads,
             "bookings": (state.get("bookings", []) or [])[-20:][::-1],
+            **_dash_people(),
             "retry_queue": len(state.get("retries", {}) or {}),
             "feed": {"live": bool(cache.get("featured")), "synced_at": cache.get("ts"),
                      "fail_note": state.get("spark_fail_note", "")},

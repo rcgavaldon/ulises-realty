@@ -96,7 +96,7 @@ Ask these naturally, one at a time, while you're booking — never as a checklis
   compare_properties. If you don't know something: "Great question — I'll make sure
   Ulises covers that when he calls you."
 - If it's clearly voicemail: leave one short message (Sofia, Ulises Ortega's assistant,
-  confirming their request; Ulises will follow up personally), then end the call.
+  confirming their request; Ulises will follow up personally), then call end_call.
 
 ## Flows — adapt to their interest
 BUYING:
@@ -157,7 +157,9 @@ and they reach him before he calls.
 
 ## Wrap-up
 Recap in one sentence what you captured, confirm when Ulises will call (or the booked
-time), thank them warmly, end the call.
+time), thank them warmly and say goodbye ONCE, then call end_call. If they answer your
+goodbye with "thanks" or "bye", call end_call without saying anything else — never say
+goodbye twice. Never hang up while they are still asking something.
 
 ## Transfer & live patching — CLIENTS ONLY, and only when {{during_hours}} is yes
 Personal and business callers are never transferred: Ulises already saw the call
@@ -195,7 +197,7 @@ ring and let it come to you. Take their message instead.
 ## Hard rules — general
 - Total call target: under 4 minutes. Keep momentum.
 - If they ask to stop being contacted: apologize once, confirm they will not be
-  contacted again, and end the call immediately.
+  contacted again, and call end_call right away.
 """
 
 BEGIN_EN = "Hi, is this {{name}}? ... This is Sofia, Ulises Ortega's virtual assistant — you just asked about {{interest}} on his website, so I'm calling you right back. Do you have two quick minutes?"
@@ -329,6 +331,11 @@ TOOLS = [
         "speak_after_execution": True,
         "execution_message_description": "Tell the caller you're seeing if Ulises is free right now and to hold for just a moment.",
     },
+    {
+        "type": "end_call",
+        "name": "end_call",
+        "description": "Hang up the phone. Call it right after your one goodbye, after leaving a voicemail, or when the caller asks not to be contacted. Never say the words end_call out loud.",
+    },
 ]
 
 OPT_OUT_FIELD = {"type": "string", "name": "opt_out",
@@ -375,7 +382,10 @@ for agent_id in [_env("AGENT_EN"), _env("AGENT_ES")]:
     for new in [OPT_OUT_FIELD, *EXTRA_FIELDS]:
         if not any(f.get("name") == new["name"] for f in fields):
             fields.append(new)
-    req("PATCH", f"/update-agent/{agent_id}", {"post_call_analysis_data": fields})
+    # Hang up after 90 s of dead air (HVAC uses 30 s, but a warm transfer can
+    # keep the caller silent on hold for up to a minute while Ulises's phone rings).
+    req("PATCH", f"/update-agent/{agent_id}", {"post_call_analysis_data": fields,
+                                               "end_call_after_silence_ms": 90_000})
     print("Agent updated:", agent_id)
 
 print("Done.")

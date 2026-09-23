@@ -116,8 +116,19 @@
   </div>
 
   <div class="card scroll" style="margin-top:18px">
+    <h2>💬 Messages <span style="text-transform:none;letter-spacing:0;color:var(--muted)">— what people left on a call with Sofia, and texts sent to your Sofia line</span></h2>
+    <table><thead><tr><th>When</th><th>How</th><th>Who</th><th>Message</th></tr></thead><tbody id="messages"></tbody></table>
+  </div>
+
+  <div class="card scroll" style="margin-top:18px">
     <h2>Leads &amp; Call Status <span style="text-transform:none;letter-spacing:0;color:var(--muted)">— click a row for the call history</span></h2>
     <table><thead><tr><th>Status</th><th>Level</th><th>Name</th><th>Phone</th><th>Wants</th><th>Next / Booked</th><th>In</th><th>Details</th></tr></thead><tbody id="leads"></tbody></table>
+  </div>
+
+  <div class="card scroll" style="margin-top:18px">
+    <h2>📇 Contacts <span style="text-transform:none;letter-spacing:0;color:var(--muted)">— everyone who called, texted or filled out your website, newest first</span></h2>
+    <input type="text" id="cq" placeholder="search name, number or email…" oninput="renderContacts()" style="max-width:320px;margin-bottom:10px">
+    <table><thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Type</th><th>Status</th><th>Last contact</th></tr></thead><tbody id="contacts"></tbody></table>
   </div>
 
   <div class="card" style="margin-top:18px">
@@ -198,6 +209,14 @@ function signOut(){
 function esc(s){ const d=document.createElement("div"); d.textContent=s??""; return d.innerHTML; }
 function fmtTs(t){ return t? new Date(t*1000).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}) : "—"; }
 
+let CONTACTS = [], TELF = null;
+function renderContacts(){
+  const q = (document.getElementById("cq").value||"").trim().toLowerCase();
+  const rows = CONTACTS.filter(c => !q || JSON.stringify(c).toLowerCase().includes(q));
+  document.getElementById("contacts").innerHTML = rows.map(c=>`<tr><td><b>${esc(c.name)||"—"}</b></td><td>${TELF(c.phone)}</td><td>${c.email?`<a href="mailto:${encodeURIComponent(c.email)}">${esc(c.email)}</a>`:"—"}</td><td>${esc(c.type)||"—"}</td><td>${esc(c.status)}</td><td>${fmtTs(c.last)}</td></tr>`).join("")
+    || `<tr><td colspan="6" style="color:var(--muted)">No contacts yet.</td></tr>`;
+}
+
 async function load(){
   const d = await api("/admin/overview");
   if(d.role === "owner") loadRaffle();
@@ -207,6 +226,11 @@ async function load(){
     ["inbound","Inbound"],["value_lookups","Value lookups"],["booked","Booked"]
   ].map(([k,l])=>`<div class="stat"><b>${w[k]||0}</b><span>${l}</span></div>`).join("") +
   `<div class="stat"><b>${d.retry_queue}</b><span>in redial queue</span></div>`;
+
+  const tel = n => { const x = String(n||"").replace(/[^\d+]/g,""); return x ? `<a href="tel:${x}">${esc(n)}</a> · <a href="sms:${x}">text</a>` : "—"; };
+  document.getElementById("messages").innerHTML = (d.messages||[]).map(m=>`<tr><td>${fmtTs(m.ts)}</td><td><span class="tag">${m.via==="call"?"📞 CALL":"💬 TEXT"}</span></td><td><b>${esc(m.who)||"—"}</b><div style="font-size:.75rem">${tel(m.num)}</div></td><td style="white-space:pre-wrap">${esc(m.text)}</td></tr>`).join("")
+    || `<tr><td colspan="4" style="color:var(--muted)">No messages yet.</td></tr>`;
+  CONTACTS = d.contacts || []; TELF = tel; renderContacts();
 
   // client links get a read-focused view: no calendar id, no drawing card
   if(d.role === "client"){
