@@ -331,6 +331,21 @@ def _blocked(phone: str) -> str | None:
     return None
 
 
+def _callback_begin(lead: dict) -> str:
+    """Sofia's first line on a website callback. Lives here, not on the LLMs:
+    their begin messages are blank so a language swap never re-greets."""
+    name = (lead.get("name") or "").strip()
+    if lead.get("lang") == "es":
+        interest = lead.get("interest_desc") or "bienes raíces en El Paso"
+        return ((f"Hola, ¿hablo con {name}? ... " if name else "¡Hola! ... ") +
+                f"Le habla Sofía, la asistente virtual de Ulises Ortega — acaba de pedir información sobre "
+                f"{interest} en su página, así que le llamo de inmediato. ¿Tiene dos minutitos?")
+    interest = lead.get("interest_desc") or "El Paso real estate"
+    return ((f"Hi, is this {name}? ... " if name else "Hi there! ... ") +
+            f"This is Sofia, Ulises Ortega's virtual assistant — you just asked about {interest} on his "
+            f"website, so I'm calling you right back. Do you have two quick minutes?")
+
+
 def _place_call(lead: dict) -> str:
     """Fire the outbound Retell call for a stored lead. Returns status string."""
     from retell import Retell
@@ -342,6 +357,7 @@ def _place_call(lead: dict) -> str:
             from_number=_call_from(),
             to_number=lead["phone"],
             override_agent_id=agent_id,
+            agent_override={"retell_llm": {"begin_message": _callback_begin(lead)}},
             retell_llm_dynamic_variables={
                 "name": lead.get("name", ""),
                 "interest": lead.get("interest_desc", "real estate"),
@@ -709,7 +725,7 @@ def api():
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api", "rev": "v24b-dash-messages-contacts-thanks"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "v24c-language-swap"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.

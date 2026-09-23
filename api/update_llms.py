@@ -89,7 +89,8 @@ Email already on file: {{email_on_file}}.
 Ask these naturally, one at a time, while you're booking — never as a checklist up front.
 
 ## Style
-- Speak ONLY {{call_language}} for the entire call.
+- Speak only the language of your role (see LANGUAGE at the end). If the caller clearly
+  wants the other language, hand off as that section says.
 - Warm, upbeat, human. One idea per turn, max two short sentences. One question at a time.
 - Never invent listings, prices, tax figures, rates, or availability. Listing facts come
   ONLY from lookup_listings. Value and tax figures come ONLY from lookup_property or
@@ -200,6 +201,42 @@ ring and let it come to you. Take their message instead.
   contacted again, and call end_call right away.
 """
 
+# Two agents, one brain (same as the HVAC line): English agent (Lily) answers
+# every new caller; Spanish agent (Claudia) takes over when the caller clearly
+# speaks Spanish, and hands back on English. Copied from Sofia HVAC's
+# _VOICE_ROLE_EN/_ES, minus the HVAC scheduling rules.
+ROLE_EN = """
+
+## LANGUAGE — YOU ARE THE ENGLISH ASSISTANT
+You speak English. Hand off to the Spanish assistant (call switch_to_spanish) ONLY when the
+caller CLEARLY wants Spanish: they speak a FULL sentence in Spanish, or they ask for it
+("¿habla español?" / "do you speak Spanish?"). When that happens, say a quick "Yes, one
+moment." and call switch_to_spanish.
+FALLBACK: never refuse Spanish. If switch_to_spanish is unavailable or fails, continue the
+call yourself in clean, natural Spanish and stay in Spanish.
+Do NOT switch for a single stray Spanish word: people say "gracias", "hola", a name, or a
+Spanish street name while still speaking English. One word is NOT a language switch.
+CRITICAL: a NAME or ADDRESS is never a language cue. When you just asked for their name or
+address, their reply IS a name or address (e.g. "Jose Guadalupe", "Camino Real"), even if it
+sounds Spanish. Only hand off on a real, sustained switch or an explicit request, so the
+caller never bounces back and forth."""
+
+ROLE_ES = """
+
+## IDIOMA — ERES LA ASISTENTE EN ESPAÑOL
+Hablas español. Pásale la llamada a la asistente en inglés (llama switch_to_english) SOLO
+cuando la persona CLARAMENTE quiera inglés: dice una FRASE COMPLETA en inglés, o lo pide
+("do you speak English?" / "¿habla inglés?"). Cuando pase, no respondas en inglés: di un
+rápido "Yes, one moment." y llama switch_to_english.
+NO cambies por una sola palabra suelta en inglés: la gente dice "okay", "house", un nombre o
+el nombre de una calle en inglés mientras sigue hablando español. UNA palabra NO es un cambio
+de idioma. Un nombre o una dirección nunca es señal de idioma. Solo pásala en un cambio real
+y sostenido o cuando lo pidan, para que nunca rebotes a la persona de un idioma a otro.
+Los datos que guardan las herramientas (nombre, correo, propiedad) van tal cual los dijo."""
+
+# Kept for reference: the callback openers now live in main.py (_callback_begin)
+# and ride on each call, because the LLMs' own begin messages must stay blank:
+# a language swap must never replay a greeting mid-call.
 BEGIN_EN = "Hi, is this {{name}}? ... This is Sofia, Ulises Ortega's virtual assistant — you just asked about {{interest}} on his website, so I'm calling you right back. Do you have two quick minutes?"
 BEGIN_ES = "Hola, ¿hablo con {{name}}? ... Le habla Sofía, la asistente virtual de Ulises Ortega — acaba de pedir información sobre {{interest}} en su página, así que le llamo de inmediato. ¿Tiene dos minutitos?"
 
@@ -371,10 +408,25 @@ EXTRA_FIELDS = [
      "examples": ["buy", "sell", "rent"]},
 ]
 
-for llm_id, begin in [(_env("LLM_EN"), BEGIN_EN), (_env("LLM_ES"), BEGIN_ES)]:
+def _swap(name, agent_id, description):
+    # exact shape of the HVAC line's proven agent_swap tool
+    return {"type": "agent_swap", "name": name, "agent_id": agent_id,
+            "post_call_analysis_setting": "both_agents", "description": description}
+
+
+SWAP_TO_ES = _swap("switch_to_spanish", _env("AGENT_ES"),
+                   "Hand the call to the Spanish-speaking assistant. Call ONLY when the caller clearly wants Spanish: a full Spanish sentence, or an explicit request for Spanish. NEVER call it on a reply to a question you just asked (a name, an address, 'si'), on a single word, on garbled audio, or once the caller has spoken a full English sentence on this call. Say 'Yes, one moment.' first.")
+SWAP_TO_EN = _swap("switch_to_english", _env("AGENT_EN"),
+                   "Pasale la llamada a la asistente en ingles. Llamala SOLO cuando la persona claramente quiera ingles: una oracion completa en ingles, o que lo pida explicitamente. NUNCA la llames por una respuesta a una pregunta que acabas de hacer (un nombre, una direccion, 'yes'), por una sola palabra, por audio confuso, ni una vez que la persona ya dijo una oracion completa en espanol en esta llamada. Di 'Yes, one moment.' primero.")
+
+for llm_id, role, swap in [(_env("LLM_EN"), ROLE_EN, SWAP_TO_ES), (_env("LLM_ES"), ROLE_ES, SWAP_TO_EN)]:
     req("PATCH", f"/update-retell-llm/{llm_id}",
-        {"general_prompt": PROMPT, "begin_message": begin, "general_tools": TOOLS})
+        {"general_prompt": PROMPT + role, "begin_message": "", "general_tools": TOOLS + [swap]})
     print("LLM updated:", llm_id)
+
+# Each agent listens for exactly English + Latin-American Spanish (never the
+# 10-language "multi"), its own language first.
+LANGS = {_env("AGENT_EN"): ["en-US", "es-419"], _env("AGENT_ES"): ["es-419", "en-US"]}
 
 for agent_id in [_env("AGENT_EN"), _env("AGENT_ES")]:
     a = req("GET", f"/get-agent/{agent_id}")
@@ -385,7 +437,8 @@ for agent_id in [_env("AGENT_EN"), _env("AGENT_ES")]:
     # Hang up after 90 s of dead air (HVAC uses 30 s, but a warm transfer can
     # keep the caller silent on hold for up to a minute while Ulises's phone rings).
     req("PATCH", f"/update-agent/{agent_id}", {"post_call_analysis_data": fields,
-                                               "end_call_after_silence_ms": 90_000})
+                                               "end_call_after_silence_ms": 90_000,
+                                               "language": LANGS[agent_id]})
     print("Agent updated:", agent_id)
 
 print("Done.")
