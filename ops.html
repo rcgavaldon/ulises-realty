@@ -75,8 +75,9 @@ const safeUrl = u => /^https:\/\/[^\s"'<>]+$/.test(u || "") ? u : "";
 async function load(){
   try{
     const r = await fetch(API + "/admin/ops", {headers: {"x-admin-token": TOKEN}});
-    if(r.status === 403){ lock("That token isn't the owner token."); return; }
+    if(r.status === 403){ try{ localStorage.removeItem("ulises_ops_tok"); }catch(e){} lock("That token isn't the owner token."); return; }
     D = await r.json();
+    try{ localStorage.setItem("ulises_ops_tok", TOKEN); }catch(e){}   // remembered on THIS browser only
     document.getElementById("stamp").textContent = "updated " + new Date().toLocaleTimeString("en-US", {hour:"numeric", minute:"2-digit"});
     renderHealth(); render();
   }catch(e){ document.getElementById("stamp").textContent = "couldn't reach the server — retrying"; }
@@ -161,8 +162,12 @@ function render(){
   }
 }
 
+// Token: from the link once (then dropped from the address bar), else remembered on this browser.
 const h = new URLSearchParams(location.hash.slice(1));
-if(h.get("t")){ document.getElementById("tok").value = h.get("t"); unlock(); } else { lock(); }
+let saved = ""; try{ saved = localStorage.getItem("ulises_ops_tok") || ""; }catch(e){}
+const tok0 = h.get("t") || saved;
+if(h.get("t")){ try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){} }
+if(tok0){ document.getElementById("tok").value = tok0; unlock(); } else { lock(); }
 setInterval(() => { if(TOKEN && document.getElementById("auto").checked && OPEN === null) load(); }, 60000);
 </script>
 </body>
