@@ -163,7 +163,7 @@ def _retell_confirm(body: dict):
     call is real and one of OUR agents'. If so, return Retell's own copy of the
     call (never the posted one, which could be forged). Else None."""
     cid = str((body.get("call") or {}).get("call_id") or "")
-    if not cid or body.get("event") not in ("call_ended", "call_analyzed"):
+    if not cid or body.get("event") not in ("call_started", "call_ended", "call_analyzed"):
         return None
     try:
         from retell import Retell
@@ -584,7 +584,7 @@ def api():
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api", "rev": "v21-callers-and-dates"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "v22-start-event-confirmed"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.
