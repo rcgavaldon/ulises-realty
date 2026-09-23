@@ -3,12 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ulises Ortega · El Paso REALTOR® — Homes for Sale in El Paso, TX</title>
-<meta name="description" content="Ulises Ortega — bilingual El Paso REALTOR®. Buy or sell your home in El Paso, TX. Instant response on every inquiry — get a call back in under a minute.">
+<title>Ulises Ortega · Bilingual El Paso REALTOR® | Homes for Sale in El Paso, TX</title>
+<meta name="description" content="Ulises Ortega, bilingual El Paso REALTOR® (se habla español) with ClearView Realty. New listings updated daily, free home value and tax estimates, and a call back in under a minute. (915) 305-8888.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="canonical" href="https://www.ulisesortegarealty.com/">
+<link rel="alternate" hreflang="en" href="https://www.ulisesortegarealty.com/">
+<link rel="alternate" hreflang="es" href="https://www.ulisesortegarealty.com/es/">
+<link rel="alternate" hreflang="x-default" href="https://www.ulisesortegarealty.com/">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230e1b2c'/%3E%3Ctext x='32' y='44' font-family='Georgia,serif' font-size='36' font-weight='bold' fill='%23c9a227' text-anchor='middle'%3EU%3C/text%3E%3C/svg%3E">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Ulises Ortega · El Paso REALTOR®">
@@ -26,11 +29,16 @@
   "description": "Bilingual REALTOR® serving El Paso, Horizon City, Socorro, Canutillo and Fort Bliss, TX.",
   "url": "https://www.ulisesortegarealty.com/",
   "image": "https://www.ulisesortegarealty.com/assets/ulises-portrait.jpg",
+  "telephone": "+19153058888",
+  "parentOrganization": {"@type": "RealEstateAgent", "name": "ClearView Realty"},
   "areaServed": [
     {"@type": "City", "name": "El Paso"},
     {"@type": "City", "name": "Horizon City"},
     {"@type": "City", "name": "Socorro"},
-    {"@type": "City", "name": "Canutillo"}
+    {"@type": "City", "name": "Canutillo"},
+    {"@type": "Place", "name": "Far East El Paso"},
+    {"@type": "Place", "name": "West Side El Paso"},
+    {"@type": "Place", "name": "East Side El Paso"}
   ],
   "knowsLanguage": ["en", "es"],
   "address": {"@type": "PostalAddress", "addressLocality": "El Paso", "addressRegion": "TX", "addressCountry": "US"},
@@ -691,7 +699,7 @@
         <img src="assets/brokerage-logo.png" alt="ClearView Realty" onerror="this.remove()" style="height:30px;width:auto;margin:4px 0 12px;opacity:.9">
         <p data-i18n="ft_blurb">Ulises Ortega — bilingual REALTOR® serving El Paso, Horizon City, Socorro, Canutillo &amp; Fort Bliss. Sponsored by ClearView Realty — TREC License #855823.</p>
         <p style="margin-top:10px" class="demo-tag" data-i18n="ft_demo">Preview listings and example testimonials shown while the live MLS connection is completed.</p>
-        <p style="margin-top:8px"><b style="color:#c9d6e4">📞 (915) 295-0548</b> — <span data-i18n="ft_phone">answered day &amp; night by Sofia, my AI assistant</span></p>
+        <p style="margin-top:8px"><a href="tel:+19153058888" style="color:#c9d6e4;font-weight:700;text-decoration:none">📞 (915) 305-8888</a> — <span data-i18n="ft_phone">if I can't pick up, Sofia, my AI assistant, answers day &amp; night</span></p>
       </div>
       <div>
         <h5 data-i18n="ft_explore">EXPLORE</h5>
@@ -701,6 +709,15 @@
         <a href="#services" data-i18n="nav_services">Services</a>
         <a href="#about" data-i18n="nav_about">About</a>
         <a href="#contact" data-i18n="nav_cta">Let's Talk</a>
+      </div>
+      <div>
+        <h5>AREAS</h5>
+        <a href="/far-east/">Far East</a>
+        <a href="/horizon-city/">Horizon City</a>
+        <a href="/west-side/">West Side</a>
+        <a href="/east-side/">East Side</a>
+        <a href="/property-taxes/">Property Taxes</a>
+        <a href="/es/">En español</a>
       </div>
       <div class="legal-links">
         <h5 data-i18n="ft_legal">REQUIRED NOTICES</h5>
@@ -818,7 +835,7 @@ const I18N = {
     v_gate_note:"Ves el estimado de inmediato — y Ulises recibe tus datos para conseguirte las cifras exactas del condado.",
     v_next_h2:"Sofía te está llamando ahora",
     v_next_p2:"Ya tiene tu dirección y estos números en pantalla — contesta el <b>(915) 295-0548</b>, somos nosotros. Te consigue las cifras exactas del condado y una cita con Ulises.",
-    ft_phone:"contestado día y noche por Sofía, mi asistente de IA",
+    ft_phone:"si no puedo contestar, Sofía, mi asistente de IA, contesta día y noche",
     m_eyebrow:"Videos", m_h2:"Recorridos de Casas y Noticias del Mercado",
     fl_lang:"IDIOMA PREFERIDO", fl_msg:"CUÉNTAME MÁS", fl_msg_ph:"ej. Busco 4 recámaras en el West Side, menos de $400k…",
     fl_consent:"Acepto recibir una llamada y/o mensaje de texto de Ulises y su asistente sobre mi solicitud. Pueden aplicar tarifas de mensajes y datos. No es condición de compra.",
@@ -1108,8 +1125,8 @@ async function runValue(e){
     }catch(_){
       delete VALUE_LEAD_SENT[vkey];              // nothing reached us: let them try again
       valueCallMsg(LANG==="es"
-        ? "<p>No pudimos avisar a Sofía. Llama o manda texto al <b>(915) 295-0548</b>.</p>"
-        : "<p>We couldn't reach Sofia. Call or text <b>(915) 295-0548</b>.</p>");
+        ? "<p>No pudimos avisar a Sofía. Llama o manda texto al <b>(915) 305-8888</b>.</p>"
+        : "<p>We couldn't reach Sofia. Call or text <b>(915) 305-8888</b>.</p>");
     }
   }catch(err){
     alert(S("v_err") || "I couldn't price that address. Double-check it, or leave me your number and I'll do it by hand.");
@@ -1242,8 +1259,8 @@ async function submitLead(e){
     }catch(err){ failed = true; }
   }
   if(failed){
-    alert(t("That didn't go through. Check your info and try again, or call or text (915) 295-0548.",
-            "No se pudo enviar. Revisa tus datos e intenta de nuevo, o llama o manda texto al (915) 295-0548."));
+    alert(t("That didn't go through. Check your info and try again, or call or text (915) 305-8888.",
+            "No se pudo enviar. Revisa tus datos e intenta de nuevo, o llama o manda texto al (915) 305-8888."));
     btn.disabled = false; return false;
   }
   if(again){
@@ -1270,6 +1287,7 @@ if(DEMO){
   document.body.appendChild(b);
 }
 applyLang();
+if(new URLSearchParams(location.search).get("lang") === "es" && LANG !== "es") toggleLang();
 prefetchSlots();
 onIntent(document.querySelector('#leadForm select[name="interest"]').value);
 </script>

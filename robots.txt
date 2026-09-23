@@ -1,0 +1,8 @@
+User-agent: *
+Disallow: /admin.html
+Disallow: /setup.html
+Disallow: /pitch.html
+Disallow: /raffle.html
+Disallow: /api/
+
+Sitemap: https://www.ulisesortegarealty.com/sitemap.xml
