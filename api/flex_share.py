@@ -64,8 +64,12 @@ def parse(page_html: str, share: str = SHARE) -> list:
             img = one.group(1) if one else ""
         sub = re.search(r"Subdivision\s+(.+?)\s+Zip Code", t)
         office = re.search(r"List Office Name:\s*(.+?)(?:\s+List Office URL:|\s+Last Modified|$)", t)
-        ev = re.search(r'class="label label-[a-z-]+">([^<]+)<', block)
-        event = html.unescape(ev.group(1)).split("·")[0].strip() if ev else ""
+        # a card can carry several labels: "Open House" is a flag, the other
+        # one ("New Listing", "Price Change") is the ribbon
+        labels = [html.unescape(x).split("·")[0].strip()
+                  for x in re.findall(r'class="label label-[a-z-]+">([^<]+)<', block)]
+        open_house = any(x.lower() == "open house" for x in labels)
+        event = next((x for x in labels if x.lower() != "open house"), "")
         status = d.get("MlsStatus") or "Active"
         tag = _EVENTS.get(event.lower()) or (status, _STATUS_ES.get(status, status))
         key = d.get("ListingKey") or ""
@@ -87,6 +91,7 @@ def parse(page_html: str, share: str = SHARE) -> list:
             "url": f"{share}/listings/{key}" if key else share,
             "public_remarks": "",
             "hot_tag": tag[0], "hot_tag_es": tag[1],
+            "open_house": open_house,           # upcoming open house; the day/time isn't on the card
             "note": "", "note_es": "",
         })
     return out

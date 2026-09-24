@@ -25,7 +25,9 @@
       var tag = es ? (l.hot_tag_es || l.hot_tag) : l.hot_tag;
       return '<a class="card" href="' + esc(l.url) + '" target="_blank" rel="noopener">' +
         (l.img ? '<img src="' + esc(l.img) + '" alt="' + esc(l.address) + '" loading="lazy">' : "") +
-        '<div class="b"><div class="s">' + esc(tag || "") + '</div><div class="p">' + money(l.price) +
+        '<div class="b"><div class="s">' + esc(tag || "") +
+        (l.open_house ? (es ? " · 🏡 Casa Abierta" : " · 🏡 Open House") : "") +
+        '</div><div class="p">' + money(l.price) +
         '</div><div class="a">' + esc(l.address) + '</div><div class="s">' + esc(l.area) + " · " +
         (l.beds || "?") + (es ? " rec · " : " bd · ") + (l.baths || "?") + (es ? " baños" : " ba") + "</div>" +
         (l.office ? '<div class="c">' + (es ? "Cortesía de " : "Listing courtesy of ") + esc(l.office) + "</div>" : "") +

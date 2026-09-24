@@ -725,7 +725,7 @@ def api():
 
     @web.get("/health")
     def health():
-        return {"ok": True, "app": "ulises-realty-api", "rev": "v24c-language-swap"}
+        return {"ok": True, "app": "ulises-realty-api", "rev": "v24d-open-house"}
 
     # GitHub Actions fires these on schedule (Modal free plan's 5 cron slots
     # are taken by Sofia prod). Guarded by CRON_TOKEN.
@@ -1923,6 +1923,7 @@ def api():
                     "highlights": " ".join(x for x in (l.get("public_remarks") or "",
                                                        f"Listed by {l['office']}." if l.get("office") else "") if x),
                     "hot": l.get("hot_tag", "") if hot_only else "",
+                    "open_house": bool(l.get("open_house")),
                 })
             res = res[:3]
         elif _is_demo(phone):
@@ -1944,6 +1945,8 @@ def api():
                     + f", status {l['status']}. {l['highlights']}")
             if l.get("hot"):
                 line += f" HOT: {l['hot']}."
+            if l.get("open_house"):
+                line += " OPEN HOUSE coming up (day and time not in this data: Ulises confirms it on their call)."
             out.append(line)
         return {"result": " | ".join(out)}
 
