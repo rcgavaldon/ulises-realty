@@ -148,6 +148,7 @@
   .hribbon{position:absolute;top:12px;left:12px;background:linear-gradient(90deg,#c0392b,#e07b39);color:#fff;
            font-size:.68rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;padding:5px 12px;border-radius:999px;
            box-shadow:0 4px 12px rgba(192,57,43,.35)}
+  .hoh-times{font-size:.8rem;font-weight:700;color:#0e1b2c;background:#fff6dc;border-radius:8px;padding:6px 9px;margin:6px 0}
   .hoh{position:absolute;top:12px;right:12px;background:#0e1b2c;color:#fff;font-size:.68rem;font-weight:800;
        letter-spacing:.08em;text-transform:uppercase;padding:5px 12px;border-radius:999px;box-shadow:0 4px 12px rgba(0,0,0,.25)}
   .hbody{padding:16px 18px 18px;display:flex;flex-direction:column;gap:4px;flex:1}
@@ -943,7 +944,8 @@ function renderListings(){
         hot: { en: l.hot_tag || "Hot", es: l.hot_tag_es || l.hot_tag || "Hot" },
         note: { en: l.note || "", es: l.note_es || l.note || "" },
         img: l.img || "", url: l.url || "", office: l.office || "", region: l.region || "",
-        openHouse: !!l.open_house
+        openHouse: !!l.open_house,
+        ohTimes: { en: l.open_house_times || [], es: l.open_house_times_es || l.open_house_times || [] }
       }));
       document.querySelector('[data-i18n="h_note"]').style.display = "none";
     }
@@ -1058,6 +1060,7 @@ function renderHot(){
         <div class="laddr">${l.address}</div>
         <div class="larea">${l.area}</div>
         <div class="hnote">${LANG==="es" ? l.note.es : l.note.en}</div>
+        ${l.openHouse && l.ohTimes && (LANG==="es" ? l.ohTimes.es : l.ohTimes.en).length ? `<div class="hoh-times">🏡 ${t("Open House","Casa Abierta")}: ${(LANG==="es" ? l.ohTimes.es : l.ohTimes.en).join(" · ")}</div>` : ""}
         <div class="hspecs">
           <span><b>${l.beds}</b> ${t("bd","rec")}</span>
           <span><b>${l.baths}</b> ${t("ba","baños")}</span>

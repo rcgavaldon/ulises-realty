@@ -27,6 +27,47 @@ _STATUS_ES = {"Active": "Activa", "Pending": "Pendiente",
               "Active Under Contract": "Bajo Contrato", "Sold": "Vendida"}
 
 
+_OH_TIME = re.compile(r'<div class="listing-detail-event-time">\s*([^<]+?)\s*</div>')
+_MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august",
+           "september", "october", "november", "december"]
+_ES = {"monday": "lunes", "tuesday": "martes", "wednesday": "miércoles", "thursday": "jueves",
+       "friday": "viernes", "saturday": "sábado", "sunday": "domingo",
+       "january": "enero", "february": "febrero", "march": "marzo", "april": "abril", "may": "mayo",
+       "june": "junio", "july": "julio", "august": "agosto", "september": "septiembre",
+       "october": "octubre", "november": "noviembre", "december": "diciembre"}
+
+
+def open_house_times(page_html: str, today=None) -> list:
+    """Upcoming open houses on a listing_detail page, e.g.
+    'Saturday, September 26, 12:00pm - 4:00pm'. Dates before `today` are dropped."""
+    from datetime import date
+    out = []
+    for raw in _OH_TIME.findall(page_html or ""):
+        s = " ".join(re.sub(r"[^0-9A-Za-z ,:.\-–]", "", html.unescape(raw)).split())
+        m = re.match(r"[A-Za-z]+, ([A-Za-z]+) (\d{1,2})\b", s)
+        if m and today and m.group(1).lower() in _MONTHS:
+            try:
+                d = date(today.year, _MONTHS.index(m.group(1).lower()) + 1, int(m.group(2)))
+                if (today - d).days > 180:          # a January date seen in December
+                    d = date(today.year + 1, d.month, d.day)
+                if d < today:
+                    continue
+            except ValueError:
+                pass
+        if s:
+            out.append(s)
+    return out
+
+
+def es_time(s: str) -> str:
+    """'Saturday, September 26, 12:00pm - 4:00pm' -> 'sábado, 26 de septiembre, 12:00pm - 4:00pm'"""
+    m = re.match(r"([A-Za-z]+), ([A-Za-z]+) (\d{1,2}),? (.*)", s)
+    if not m:
+        return s
+    day, mon = _ES.get(m.group(1).lower(), m.group(1)), _ES.get(m.group(2).lower(), m.group(2))
+    return f"{day}, {m.group(3)} de {mon}, {m.group(4)}"
+
+
 def _text(block: str) -> str:
     return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", block)))
 
@@ -111,4 +152,23 @@ def fetch(share: str = SHARE, max_pages: int = MAX_PAGES) -> list:
                 break
             seen.update(x["id"] for x in got)
             rows.extend(got)
+        # Open house day + hours: only on the detail page a click opens. A few
+        # homes at most; any failure keeps the flag and just skips the times.
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        today = datetime.now(ZoneInfo("America/Denver")).date()
+        for x in rows:
+            if not x.get("open_house") or not x.get("id"):
+                continue
+            try:
+                d = c.get(f"{share}/listing_detail/{x['id']}")
+                d.raise_for_status()
+                times = open_house_times(d.text, today)
+                if times:
+                    x["open_house_times"] = times
+                    x["open_house_times_es"] = [es_time(t) for t in times]
+                elif "listing-detail-event-time" in d.text:
+                    x["open_house"] = False         # every date listed has passed
+            except Exception:
+                pass
     return rows

@@ -26,7 +26,9 @@
       return '<a class="card" href="' + esc(l.url) + '" target="_blank" rel="noopener">' +
         (l.img ? '<img src="' + esc(l.img) + '" alt="' + esc(l.address) + '" loading="lazy">' : "") +
         '<div class="b"><div class="s">' + esc(tag || "") +
-        (l.open_house ? (es ? " · 🏡 Casa Abierta" : " · 🏡 Open House") : "") +
+        (l.open_house ? (es ? " · 🏡 Casa Abierta" : " · 🏡 Open House") +
+          (((es ? l.open_house_times_es : l.open_house_times) || []).length
+            ? ": " + esc(((es ? l.open_house_times_es : l.open_house_times) || []).join(" · ")) : "") : "") +
         '</div><div class="p">' + money(l.price) +
         '</div><div class="a">' + esc(l.address) + '</div><div class="s">' + esc(l.area) + " · " +
         (l.beds || "?") + (es ? " rec · " : " bd · ") + (l.baths || "?") + (es ? " baños" : " ba") + "</div>" +
